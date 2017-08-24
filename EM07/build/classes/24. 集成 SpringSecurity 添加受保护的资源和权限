@@ -1,0 +1,283 @@
+24. 把受保护的资源和访问该资源对应的权限放到数据表中.
+1). 相关的实体类为: Resource 和 Authority. 
+2). 注意:
+在 javascript 代码块部分可以直接使用 JSP 的标签!
+
+<security:authorize ifAnyGranted="ROLE_EMP_DELETE,ROLE_EMP_UPDATE">
+var $td = $("<td></td>");
+$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+if(item.isDeleted == 1){
+	$td.append("&nbsp;&nbsp;删除")
+}else{
+	$td.append("&nbsp;&nbsp;");
+	var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+	$deleteANode.click(function(){
+		deleteTr(this);				
+		return false;
+	});
+	$td.append($deleteANode);
+	$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+}
+$tr.append($td);
+</security:authorize>
+
+**************具体步骤***********************************
+1)com.atguigu.ems.security包中添加如下接口及其实现类：
+
+接口如下：
+
+public interface FilterInvocationSecurityMetadataSourceRequestMapBuilder {
+
+	public LinkedHashMap<RequestMatcher, Collection<ConfigAttribute>> buildRequestMap();
+	
+}
+
+实现类如下：
+
+@Component("filterInvocationSecurityMetadataSourceRequestMapBuilder")
+public class FilterInvocationSecurityMetadataSourceRequestMapBuilderImpl
+		implements FilterInvocationSecurityMetadataSourceRequestMapBuilder {
+
+	@Autowired
+	private ResourceService resourceService;
+	
+	@Override
+	public LinkedHashMap<RequestMatcher, Collection<ConfigAttribute>> buildRequestMap() {
+		LinkedHashMap<RequestMatcher, Collection<ConfigAttribute>> requestMap = 
+				new LinkedHashMap<>();
+		
+		AntPathRequestMatcher key = null;
+		Collection<ConfigAttribute> val = null;
+		
+		for(Resource resource: resourceService.getAll()){
+			key = new AntPathRequestMatcher(resource.getUrl());
+			val = new HashSet<>();
+			
+			for(Authority authority: resource.getAuthorities()){
+				String name = authority.getName();
+				val.add(new SecurityConfig(name));
+			}
+			
+			requestMap.put(key, val);
+		}
+		
+		return requestMap;
+	}
+
+}
+
+2)com.atguigu.ems.daos加一个类：ResourceDao
+
+@Repository
+public class ResourceDao {
+
+	@Autowired
+	private SessionFactory sessionFactory;
+	
+	public Session getSession(){
+		return sessionFactory.getCurrentSession();
+	}
+	
+	public Criteria getCriteria(){
+		return getSession().createCriteria(Resource.class);
+	}
+	
+	public List<Resource> getAll(){
+		return getCriteria().list();
+	}
+}
+
+3)修改 /EM06/src/com/atguigu/ems/entities/Resource.hbm.xml
+因为Resource也是只可读，不可写不可改不可加，和Authority一样，我们可以配置文件中添加：lazy="false"
+
+<set name="authorities" table="oa_authority_resource" lazy="false">
+	<key column="RESOURCE_ID"></key>
+	<many-to-many column="AUTHORITY_ID" class="com.atguigu.ems.entities.Authority"/>
+</set>
+
+4)com.atguigu.ems.services 中添加：ResourceService
+
+@Service
+public class ResourceService {
+
+	@Autowired
+	private ResourceDao resourceDao;
+	
+	@Transactional(readOnly=true)
+	public List<Resource> getAll(){
+		return resourceDao.getAll(); 
+	}
+	
+}
+
+5)删掉applicationContext-security.xml中原来仅仅是测试用的这行语句：
+	<!-- 仅仅测试用 -->
+	<security:intercept-url pattern="/emp-list" access="ROLE_EMP_LIST"/>
+	
+	
+6)数据库 表oa_resource 中有 URL如下：
+/emp-delete
+/emp-input
+/emp-list
+/emp-save
+/emp_upload
+/role-input
+/role-list
+
+7)启动工程，我们在浏览器中输入如下访问地址：进行测试一下
+http://localhost:8080/EM06/emp-list
+http://localhost:8080/EM06/emp-input
+
+
+8)com.atguigu.ems.security包中添加：EmsSecurityBeanPostProcessor
+
+@Component
+public class EmsSecurityBeanPostProcessor implements BeanPostProcessor {
+
+	private FilterSecurityInterceptor interceptor;
+	private DefaultFilterInvocationSecurityMetadataSource metadataSource;
+	private boolean isSetter = false;
+	
+	@Override
+	public Object postProcessAfterInitialization(Object arg0, String arg1)
+			throws BeansException {
+		if(arg0 instanceof FilterSecurityInterceptor){
+			this.interceptor = (FilterSecurityInterceptor) arg0;
+		}
+		if(arg1.equals("filterInvocationSecurityMetadataSource")){
+			this.metadataSource = (DefaultFilterInvocationSecurityMetadataSource) arg0;
+		}
+		if(this.interceptor != null
+				&& this.metadataSource != null
+				&& !isSetter){
+			this.interceptor.setSecurityMetadataSource(metadataSource);
+			isSetter = true;
+		}
+		
+		return arg0;
+	}
+
+	@Override
+	public Object postProcessBeforeInitialization(Object arg0, String arg1)
+			throws BeansException {
+		return arg0;
+	}
+
+}
+
+9)applicationContext-security.xml中添加如下配置：
+
+	<bean id="filterInvocationSecurityMetadataSource"
+		class="org.springframework.security.web.access.intercept.DefaultFilterInvocationSecurityMetadataSource">
+		<constructor-arg>
+			<bean factory-bean="filterInvocationSecurityMetadataSourceRequestMapBuilder" 
+				factory-method="buildRequestMap"></bean>
+		</constructor-arg>	
+	</bean>
+	
+	备注：如果不进行这个配置的话，FilterInvocationSecurityMetadataSourceRequestMapBuilderImpl就
+	是一个一般的 @Component；我要如何返回这个 LinkedHashMap<RequestMatcher, Collection<ConfigAttribute>> buildRequestMap() 
+	呢？这就需要上面的配置。
+	
+10)启动工程，我们在浏览器中输入如下访问地址：
+http://localhost:8080/EM06/emp-list
+http://localhost:8080/EM06/emp-input
+都进不去，这就保护起来了，需要权限！！！
+
+11)下面我们看一下不同的人登录后不同权限的问题。
+打开 oa_employee表中 ------login_name 为 AABBCC ---employee_id 为 2，密码是 123456 而且该密码已经被盐值加密
+
+打开 oa_employee_role 表------发现 employee_id 为 2具有 role_id 为 6 和 9 两个 角色
+
+打开 oa_role_authority表-----我们发现 角色role_id 为6 具有 authority_id 为1到12的权限id
+role_id 为9 具有 authority_id 为2和3的权限id
+
+我们用  用户名AABBCC  密码123456  登录一下；登录成功后然后浏览器中输入
+http://localhost:8080/EM06/emp-list
+http://localhost:8080/EM06/emp-input
+http://localhost:8080/EM06/role-list
+都可以成功访问。
+
+我们再http://localhost:8080/EM06/security-logout登出一下
+
+然后换登录名： AAAAAA 密码 123456  它是 employee_id 为1 role_id 为9 
+role_id 为9 具有 authority_id 为2和3的权限id
+oa_authority表中可以查到 2 为 员工删除 和员工查询两个选项
+http://localhost:8080/EM06/emp-list 访问 ok
+http://localhost:8080/EM06/role-list 报 403 错误；
+http://localhost:8080/EM06/emp-input  也报错 403
+
+此时 FM12345  123456 无法登录进来了，因为它没有进行盐值加密
+
+**************使用自定义标签来隐藏受保护的资源*********************
+1.在list2.jsp中引入：
+<%@ taglib prefix="security" uri="http://www.springframework.org/security/tags" %>
+2. 对需要隐藏的模块添加自定义标签
+        注意 ROLE_EMP_DELETE,ROLE_EMP_UPDATE 是数据库表 oa_authority中的Authority_Name 字段
+         对应员工删除和员工修改
+**********这是 head 中的 修改：***********************************
+
+	<security:authorize ifAnyGranted="ROLE_EMP_DELETE,ROLE_EMP_UPDATE">
+	var $td = $("<td></td>");
+	$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+	
+	if(item.isDeleted == 1){
+		$td.append("&nbsp;&nbsp;删除")
+	}else{
+		$td.append("&nbsp;&nbsp;");
+		var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+		$deleteANode.click(function(){
+			deleteTr(this);				
+			return false;
+		});
+		$td.append($deleteANode);
+		$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+	}
+	
+	$tr.append($td);
+	</security:authorize>
+	
+*******这是  body 中的 修改：******************************************
+
+        <security:authorize ifAnyGranted="ROLE_EMP_DELETE,ROLE_EMP_UPDATE">
+		<td>操作</td>
+		</security:authorize>
+
+
+		<security:authorize ifAnyGranted="ROLE_EMP_DELETE,ROLE_EMP_UPDATE">
+		<td>
+			<security:authorize ifAnyGranted="ROLE_EMP_UPDATE">
+			<a href="emp-input?id=${employeeId }">修改</a>
+			&nbsp;
+			</security:authorize>
+			<security:authorize ifAnyGranted="ROLE_EMP_DELETE">
+			<s:if test="isDeleted == 1">
+				删除
+			</s:if>
+			<s:else>
+				<a class="delete" href="emp-delete?id=${employeeId }">删除</a>
+				<input type="hidden" value="${loginName }"/>
+			</s:else>
+			</security:authorize>
+		</td>
+		</security:authorize>
+
+
+3)登录 AAAAAA 123456 进行测试，浏览器输入 http://localhost:8080/EM06/emp-list
+  发现异常：
+
+Messages:	
+org.springframework.web.util.ExpressionEvaluationUtils
+org/springframework/web/util/ExpressionEvaluationUtils
+java.lang.NoClassDefFoundError: org/springframework/web/util/ExpressionEvaluationUtils
+An exception occurred processing JSP page /WEB-INF/pages/emps/list2.jsp at line 118 115: 116: $tr.append("
+" + item.roleNames + "	
+File:	org/apache/catalina/loader/WebappClassLoader.java
+
+我们把 org.springframework.web.util包中的工具类
+ExpressionEvaluationUtils.java粘贴到自己的工程中，重新启动服务器再测试。没有异常了
+
+AAAAAA  123456  具有员工删除 和员工查询功能，我们删掉 oa_role_authority数据表中的 role_id 为9 Authority_id 为2的权限(即删除员工)的权限。
+这样该账号只剩下与昂查询了。登录后，到达http://localhost:8080/EM06/emp-list页面，不再显示 删除与修改的操作项
+
+当登录  AABBCC 123456 查看 http://localhost:8080/EM06/emp-list页面，删除和修改操作项都存在

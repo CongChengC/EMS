@@ -1,0 +1,220 @@
+抽取 BaseService 具体步骤：
+1)建立 com.atguigu.ems.services.BaseService<T>类：
+com.atguigu.ems.services.BaseService<T>中BaseDao<T>用 protected是因为子类可能去用这个DAO：
+
+public class BaseService<T> {
+	
+	//Spring4 提供的泛型注入.
+	@Autowired
+	protected BaseDao<T> dao;
+	
+	
+
+}
+
+2)把 com.atguigu.ems.services.AuthorityService中内部代码注销：
+ 然后把如下代码粘贴到 BaseService
+	@Transactional(readOnly=true)
+	public List<Authority> getByIsNotNull(String propertyName){
+		return authorityDao.getByNotNull(propertyName);
+	}
+	
+	@Transactional(readOnly=true)
+	public List<Authority> getByIsNull(String propertyName){
+		return authorityDao.getByNull(propertyName);
+	}
+	
+粘贴后进修改：
+	
+	@Transactional(readOnly=true)
+	public List<T> getByIsNotNull(String propertyName){
+		return dao.getByNotNull(propertyName);
+	}
+	
+	@Transactional(readOnly=true)
+	public List<T> getByIsNull(String propertyName){
+		return dao.getByNull(propertyName);
+	}
+	
+最后AuthorityService继承BaseService<Authority>：
+修改如下：
+@Service
+public class AuthorityService extends BaseService<Authority>  {}
+
+
+3) 最后DepartmentService继承BaseService<Department>：
+修改如下：
+@Service 
+public class DepartmentService extends BaseService<Department>{}
+
+注销 DepartmentService内部代码。
+
+4)com.atguigu.ems.services.EmployeeService中 
+注销：
+//	@Autowired
+//	private EmployeeDao employeeDao;
+
+ctrl + F 然后    employeeDao 全部替换 为  dao
+
+再 继承修改：
+@Service
+public class EmployeeService extends BaseService<Employee> {}
+
+
+
+5) com.atguigu.ems.services.EmployeeService.get(Integer)中的 ：
+原来这样：把它注销：
+	public Employee get(Integer id){
+		Employee employee = dao.get(id);
+		Hibernate.initialize(employee.getEditor());
+		Hibernate.initialize(employee.getRoles());
+		Hibernate.initialize(employee.getDepartment());
+		return employee;
+	}
+	
+添加这样的方法：
+	//设置子类需要初始化的属性
+	@Override
+	protected void initializeEntity(Employee entity) {
+		Hibernate.initialize(entity.getEditor());
+		Hibernate.initialize(entity.getRoles());
+		Hibernate.initialize(entity.getDepartment());
+	}
+
+
+BaseService中修改如下：	
+	
+	@Transactional(readOnly = true)
+	public T get(Integer id) {
+		T entity = dao.get(id);
+		
+		//在父类中是空的方法. 子类可以根据自己的情况来初始化当前实体类的属性
+		initializeEntity(entity);
+		
+		return entity;
+	}
+	
+	protected void initializeEntity(T entity) {}
+
+6)com.atguigu.ems.services.EmployeeService.save(Employee)
+原来这样：
+	@Transactional
+	public void save(Employee employee){
+		//添加
+		if(employee.getEmployeeId() == null){
+			//后边需要进行调整
+			employee.setPassword("123456");
+		}
+		dao.saveOrUpdate(employee);
+	}
+	
+后来这样：
+
+	@Transactional
+	public void save(Employee entity) {
+		// 添加
+		if (entity.getEmployeeId() == null) {
+			// 后边需要进行调整
+			entity.setPassword("123456");
+		}
+
+		super.save(entity);
+	}
+	
+同时 com.atguigu.ems.services.BaseService<T>加如下方法：
+
+	@Transactional
+	public void save(T entity){
+		dao.saveOrUpdate(entity);
+	}
+	
+7)注销EmployeeService中：
+	@Transactional(readOnly=true)
+	public Employee getByLoginName(String loginName){
+		return dao.getBy("loginName", loginName);
+	}
+	
+
+com.atguigu.ems.services.BaseService<T>中添加：
+
+	@Transactional(readOnly = true)
+	public T getByLoginName(String loginName) {
+		return dao.getBy("loginName",loginName);
+	}
+	
+8)  com.atguigu.ems.services.BaseService<T>中添加：
+
+	@Transactional
+	public void delete(Integer id){
+		dao.delete(id);
+	}
+	
+	com.atguigu.ems.daos.BaseDao<T>中加：
+	
+	public void delete(Integer id){
+		T entity = get(id);
+		getSession().delete(entity);
+	}
+	
+	父类中没有返回值，子类有返回值，为避免冲突：
+	把             com.atguigu.ems.services.EmployeeService.delete(Integer)   方法名    
+	修改为：com.atguigu.ems.services.EmployeeService.deleteEmployee(Integer)
+	
+9)注销com.atguigu.ems.services.EmployeeService.login(String, String)方法：
+//	@Transactional(readOnly=true)
+//	public Page<Employee> getPage(int pageNo){
+//		Page<Employee> page =  dao.getPage(pageNo);
+//		for(Employee employee: page.getContent()){
+//			Hibernate.initialize(employee.getDepartment());
+//			Hibernate.initialize(employee.getRoles());
+//		}
+//		return page;
+//	}
+
+把该方法复制到 BaseService中，然后修改为：
+
+	@Transactional(readOnly = true)
+	public Page<T> getPage(int pageNo) {
+		Page<T> page = dao.getPage(pageNo);
+		initializePageContent(page.getContent());
+		return page;
+	}
+	
+	protected void initializePageContent(List<T> content) {}
+
+
+com.atguigu.ems.services.EmployeeService中重写initializePageContent方法：
+
+	@Override
+	protected void initializePageContent(List<Employee> content) {
+		for(Employee employee: content){
+			Hibernate.initialize(employee.getDepartment());
+			Hibernate.initialize(employee.getRoles());
+			Hibernate.initialize(employee.getResume());
+			Hibernate.initialize(employee.getEditor());
+		}
+	}	
+
+10) 注销ResourceService中代码，并修改如下：
+@Service
+public class ResourceService extends BaseService<Resource> {}
+
+11) 注销 com.atguigu.ems.services.RoleService中代码，并修改如下：
+@Service 
+public class RoleService extends BaseService<Role> {}
+
+12) BaseService中 添加 ： 
+
+	@Transactional
+	public List<T> getAll(){
+		List<T> list = dao.getAll();
+		initializeList(list);
+		return list;
+	}
+	
+	protected void initializeList(List<T> list) {}
+	
+13) 然后修改相关测试类，或action类中的delete()方法，因为我们在service中有一个 deleteEmployee(id)方法
+    这回产生冲突。
+
+	

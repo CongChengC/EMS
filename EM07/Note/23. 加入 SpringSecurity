@@ -1,0 +1,512 @@
+23. 加入 SpringSecurity
+1). 注意:
+①. SpringSecurity 的 Filter 需要配置在什么位置: 放在字符编码过滤器的后面, Struts2 过滤器的前面.
+②. 因为 GrantedAuthorityImpl 重写了 equals 和 hashCode, 所以可以创建 GrantedAuthorityImpl 对象, 把其
+放入到一个 Set 中, 而不必再担心重复的问题
+③. 之前com.atguigu.ems.daos.EmployeeDao使用 loginName 获取 Employee 的方法:
+String hql = "FROM Employee e WHERE e.loginName = :loginName"; 
+里面并没有初始化 roles, 以及 roles 中的 authorities. 所以说会出现懒加载异常
+解决: 可以通过重写 Dao 的 hql 来解决这个问题:
+String hql = "FROM Employee e "
+	+ "LEFT OUTER JOIN FETCH e.roles r "
+	+ "LEFT OUTER JOIN FETCH r.authorities "
+	+ "WHERE e.loginName = :loginName ";
+新的问题: 并不是每一  次使用 loginName 获取 Employee 信息时都需要初始化 roles 以及 roles 的 authorities. 
+
+
+
+2). Struts2 的简单验证还可以使用吗 ? 
+①. 若希望 Struts2 的简单验证还能够使用, 则必须把最原生的请求直接发送给 Struts2.
+	> 需要借助于 authentication-success-handler-ref 和 authentication-failure-handler-ref 属性.
+	arg0.getRequestDispatcher("/emp-login").forward(arg0, arg1);
+	> 为了使 Struts2 的过滤器能够拦截到转发的请求, 需要在 web.xml 文件中配置过滤器时, 加入如下配置:
+	<filter-mapping>
+        <filter-name>struts2</filter-name>
+        <url-pattern>/*</url-pattern>
+        <dispatcher>REQUEST</dispatcher>
+        <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
+    
+3). 完成原有的登陆逻辑:
+①. 登陆次数 + 1:
+	> 不能在 EmsUserDetailsService#loadUserByUsername 方法中完成登录次数 + 1, 因为那时候还没有进行密码比对呢. 
+	> 应该在登陆成功之后, 登陆次数 + 1. 此时有两个位置可以来做:
+		> EmsAuthenticationSuccessHandler
+		> EmployeeAction. 可以得到 Employee, 调用 Service 方法使登陆次数 + 1.
+
+②. 把 Employee 放到 Session 中.    
+	> 在 EmployeeAction 中可以把登陆的 Employee 放到 Session 中. 
+	> 在 EmsUserDetailsService#loadUserByUsername 方法中已经获取过 Employee 对象了. 可以使 
+	EmsUserDetailsService#loadUserByUsername 方法返回 User 的一个子类, 其中包含 Employee. 
+	> 在 EmployeeAction 中可以通过 SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+	方法得到 EmsUserDetailsService#loadUserByUsername 方法的返回值, 进而可以得到 Employee
+
+3). 若登陆失败, 如何在页面上显示错误消息 ? 	
+①. 可以在 EmsAuthenticationFailureHandler 中得到异常, 把异常放入到 request 中
+②. 在 EmployeeAction 的 login 方法中可以得到异常.
+③. 在 Struts2 的配置文件中进行异常映射. 
+
+
+******************具体操作*********************************************************
+0)在工程的 lib文件夹中加入主要的jar包：
+spring-security-acl-3.1.0.M1.jar
+spring-security-config-3.1.0.M1.jar
+spring-security-core-3.1.0.M1.jar
+spring-security-taglibs-3.1.0.M1.jar
+spring-security-web-3.1.0.M1.jar
+
+
+1)找到  OpenSource\spring-security-3.1.0.M1\dist\spring-security-samples-contacts-3.1.0.M1\WEB-INF中的web.xml
+  找到如下：
+  
+   <filter>
+        <filter-name>springSecurityFilterChain</filter-name>
+        <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>localizationFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <filter-mapping>
+      <filter-name>springSecurityFilterChain</filter-name>
+      <url-pattern>/*</url-pattern>
+    </filter-mapping>
+ 
+一般地, 字符编码过滤器一定放在最前面. 因为 request.setCharacterEncoding() 方法在读取了请求参数之后无效  
+ 选取上述如下两栏，把它们粘贴到自己工程web.xml 文件的中的 字符编码过滤器配置后面。要放struts2配置前面，要不struts2完事了，还要它干嘛呢！！！
+ 	<filter>
+        <filter-name>springSecurityFilterChain</filter-name>
+        <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+    </filter>
+
+    <filter-mapping>
+      <filter-name>springSecurityFilterChain</filter-name>
+      <url-pattern>/*</url-pattern>
+    </filter-mapping>
+ 
+2)在conf文件夹中配置  applicationContext-security.xml (以 Spring Bean Configration file 类型建立该文件)
+  Namspaces 选择 beans 和 security
+  
+  准备：把以前的 index.jsp 备份一个，改名字为index2.jsp
+ 以前的是，把这个备份着 <s:form action="/emp-login" method="POST"></s:form> 
+ 
+ 然后在index.jsp中修改为：<s:form action="/security-login" method="POST"></s:form> 
+ 
+ 
+ 3)在  applicationContext-security.xml中进行配置：
+ 
+配置解释：
+   login-page="/index.jsp"这个是登录页面；
+   login-processing-url="/security-login"这个是
+          和index.jsp中的 <s:form action="/security-login" method="POST"></s:form> 对应；
+          在struts.xml中配置：
+   		
+   		<action name="login-success">
+			<result name="success">/WEB-INF/pages/success.jsp</result>
+		</action>
+         
+ 这与 default-target-url="/login-success"相对应；authentication-failure-url="/index.jsp"
+这是失败了去哪个页面;
+
+ <security:intercept-url pattern="/emp-list" access="ROLE_EMP_LIST"/>
+ 这个是需要拦截的页面，这个用来测试用的
+
+*****************下面是具体的初步配置*******************
+ 
+ 
+ 		<security:http auto-config="true">
+		
+		<security:intercept-url pattern="/emp-list" access="ROLE_EMP_LIST"/>
+		
+		<!-- 配置登陆相关 -->
+		<security:form-login
+			login-page="/index.jsp"
+			login-processing-url="/security-login"
+			username-parameter="loginName"
+			password-parameter="password"
+			
+			authentication-failure-url="/index.jsp"
+			
+			default-target-url="/login-success"
+			always-use-default-target="true"
+			/>
+			
+		<!-- 配置登出 -->	
+		<security:logout
+			logout-url="/security-logout"
+			logout-success-url="/index.jsp"
+			/>
+		
+	</security:http>
+	
+	<!-- 配置自定义的认证 -->
+	<security:authentication-manager>
+		<security:authentication-provider user-service-ref="emsUserDetailsService">
+			<security:password-encoder hash="md5">
+				<security:salt-source user-property="username"/>
+			</security:password-encoder>
+		</security:authentication-provider>
+	</security:authentication-manager>
+ 
+ 4)新建一个包com.atguigu.ems.security，包中新建一个类EmsUserDetailsService
+ 
+@Component
+public class EmsUserDetailsService implements UserDetailsService {
+
+	@Autowired
+	private EmployeeService employeeService;
+	
+	@Override
+	@Transactional(readOnly=true)
+	public UserDetails loadUserByUsername(String username)
+			throws UsernameNotFoundException {
+		Employee employee = employeeService.getByLoginName(username);
+		
+		if(employee == null){
+			throw new UsernameNotFoundException(username);
+		}
+		
+		//初始化 Employee 的 roles, 以及 roles 的 authorities
+		for(Role role: employee.getRoles()){
+			for(Authority authority: role.getAuthorities()){
+				Hibernate.initialize(authority.getMainResource());
+				Hibernate.initialize(authority.getParentAuthority());
+			}
+		}
+		
+		String password = employee.getPassword();
+		boolean enabled = employee.getEnabled() == 1;
+		
+		boolean accountNonExpired = true;
+		boolean credentialsNonExpired = true;
+		boolean accountNonLocked = true;
+		
+		Collection<GrantedAuthority> authorities = new HashSet<>();
+		for(Role role: employee.getRoles()){
+			for(Authority authority: role.getAuthorities()){
+				String name = authority.getName();
+				GrantedAuthorityImpl impl = new GrantedAuthorityImpl(name);
+				authorities.add(impl);
+			}
+		}
+		
+		User user = new User(username, password, enabled, 
+				accountNonExpired, credentialsNonExpired, accountNonLocked, authorities);
+		return user;
+	}
+
+}
+ 
+备注： 
+之前com.atguigu.ems.daos.EmployeeDao使用 loginName 获取 Employee 的方法:
+String hql = "FROM Employee e WHERE e.loginName = :loginName"; 
+里面并没有初始化 roles, 以及 roles 中的 authorities. 所以说会出现懒加载异常
+解决: 可以通过重写 Dao 的 hql 来解决这个问题:
+String hql = "FROM Employee e "
+	+ "LEFT OUTER JOIN FETCH e.roles r "
+	+ "LEFT OUTER JOIN FETCH r.authorities "
+	+ "WHERE e.loginName = :loginName ";
+新的问题: 并不是每一  次使用 loginName 获取 Employee 信息时都需要初始化 roles 以及 roles 的 authorities.  
+ 
+于是有了上述： 
+		
+		//初始化 Employee 的 roles, 以及 roles 的 authorities
+		for(Role role: employee.getRoles()){
+			for(Authority authority: role.getAuthorities()){
+				Hibernate.initialize(authority.getMainResource());
+				Hibernate.initialize(authority.getParentAuthority());
+			}
+		}
+ 
+ 
+ 
+ 5)测试：run as工程，在浏览器输入 http://localhost:8080/EM06/emp-list
+   会回到 http://localhost:8080/EM06/index.jsp 说明起作用了
+   
+   在 com.atguigu.ems.test.ApplicationContextTest运行如下测试方法：
+   	@Test
+	public void testGetbyLoginName(){
+		Employee employee = employeeService.getByLoginName("AABBCC");
+		System.out.println("size:"+employee.getRoles().size());
+	}
+当 写 Dao 的 hql 时候的方法：
+不会出现懒加载异常:
+String hql = "FROM Employee e "
+	+ "LEFT OUTER JOIN FETCH e.roles r "
+	+ "LEFT OUTER JOIN FETCH r.authorities "
+	+ "WHERE e.loginName = :loginName ";
+	
+当EmsUserDetailsService中用 //初始化 Employee 的 roles, 以及 roles 的 authorities的方法：
+时候，会出现懒加载异常
+for(Role role: employee.getRoles()){
+	for(Authority authority: role.getAuthorities()){
+		Hibernate.initialize(authority.getMainResource());
+		Hibernate.initialize(authority.getParentAuthority());
+	}
+}
+但是用该方法时候，登录页面 http://localhost:8080/EM06/index.jsp输入 用户名AABBCC 密码123456
+可以正常登录
+
+6) Struts2 的简单验证还可以使用吗 ? 
+          若希望 Struts2 的简单验证还能够使用, 则必须把最原生的请求直接发送给 Struts2.
+	> 需要借助于 authentication-success-handler-ref 和 authentication-failure-handler-ref 属性.
+	arg0.getRequestDispatcher("/emp-login").forward(arg0, arg1);
+	> 为了使 Struts2 的过滤器能够拦截到转发的请求, 需要在 web.xml 文件中配置过滤器时, 加入如下配置:
+	<filter-mapping>
+        <filter-name>struts2</filter-name>
+        <url-pattern>/*</url-pattern>
+        <dispatcher>REQUEST</dispatcher>
+        <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
+    
+你在登录页面随便输入 用户名和密码时候，以前的验证怎么不起做用了啊？？
+需要在 /EM06/conf/applicationContext-security.xml的 配置文件中加入：
+	authentication-success-handler-ref="emsAuthenticationSuccessHandler"
+	authentication-failure-handler-ref="emsAuthenticationFailureHandler"
+	
+最终applicationContext-security.xml如下：
+
+<security:http auto-config="true">
+		
+		<security:intercept-url pattern="/emp-list" access="ROLE_EMP_LIST"/>
+		
+		<!-- 配置登陆相关 -->
+		<security:form-login
+			login-page="/index.jsp"
+			login-processing-url="/security-login"
+			username-parameter="loginName"
+			password-parameter="password"
+			
+			authentication-failure-url="/index.jsp"
+			
+			default-target-url="/login-success"
+			always-use-default-target="true"
+			
+			authentication-success-handler-ref="emsAuthenticationSuccessHandler"
+			authentication-failure-handler-ref="emsAuthenticationFailureHandler"
+			/>
+			
+		<!-- 配置登出 -->	
+		<security:logout
+			logout-url="/security-logout"
+			logout-success-url="/index.jsp"
+			/>
+		
+	</security:http>
+	
+	<!-- 配置自定义的认证 -->
+	<security:authentication-manager>
+		<security:authentication-provider user-service-ref="emsUserDetailsService">
+			<security:password-encoder hash="md5">
+				<security:salt-source user-property="username"/>
+			</security:password-encoder>
+		</security:authentication-provider>
+	</security:authentication-manager>
+	
+7)建立类 com.atguigu.ems.security.EmsAuthenticationSuccessHandler配合6）步骤登录成功时候如下：
+
+@Component
+public class EmsAuthenticationSuccessHandler implements
+		AuthenticationSuccessHandler {
+
+	@Override
+	public void onAuthenticationSuccess(HttpServletRequest arg0,
+			HttpServletResponse arg1, Authentication arg2) throws IOException,
+			ServletException {
+		arg0.getRequestDispatcher("/emp-login").forward(arg0, arg1);
+	}
+
+}
+
+再建立 com.atguigu.ems.security.EmsAuthenticationFailureHandler配合6）步骤登录失败时候如下：
+
+@Component
+public class EmsAuthenticationFailureHandler implements
+		AuthenticationFailureHandler {
+
+	@Override
+	public void onAuthenticationFailure(HttpServletRequest arg0,
+			HttpServletResponse arg1, AuthenticationException arg2)
+			throws IOException, ServletException {
+		if(arg2 != null){
+			arg0.setAttribute("exception", arg2);
+		}
+		arg0.getRequestDispatcher("/emp-login").forward(arg0, arg1);
+	}
+
+}
+
+备注：因为转发才会把原来的 username password传过去，重定向就丢了！！！！
+"/emp-login"会去找 struts.xml 中的 emp-login 对应配置(这个和我们备份的index2.jsp中的那个
+<s:form action="/emp-login" method="POST"> 走向相同的去处。)
+
+8)此时一定记得在 web.xml 中加上如下配置：
+	> 为了使 Struts2 的过滤器能够拦截到转发的请求, 需要在 web.xml 文件中配置过滤器时, 加入如下配置:
+	<filter-mapping>
+        <filter-name>struts2</filter-name>
+        <url-pattern>/*</url-pattern>
+        <dispatcher>REQUEST</dispatcher>
+        <dispatcher>FORWARD</dispatcher>
+    </filter-mapping>
+    
+9)此时在登录页面进行登录测试，错误信息提示回复正常！！！但是当你输入正确登录名和密码时候，怎么也提示 用户名和密码不匹配呢？
+因为，com.atguigu.ems.actions.EmployeeAction中的 
+	public String login(){
+		String loginName = model.getLoginName();
+		String password = model.getPassword();
+		Employee employee = employeeService.login(loginName, password);
+		this.session.put("employee", employee);
+		return "success";
+	}
+	
+不能用了，用户名和密码已经比完了。开发中从来不需要这样比：
+	
+	@Transactional
+	public Employee login(String loginName, String password){
+		Employee employee = employeeDao.getByLoginName(loginName);
+		if(employee == null){
+			throw new LoginNameNotFoundException();
+		}
+		if(employee.getIsDeleted() == 1){
+			throw new EmployeeIsDeletedException();
+		}
+		if(employee.getEnabled() != 1){
+			throw new EmployeeDisabledException();
+		}
+		if(!password.equals(employee.getPassword())){
+			throw new PasswordNotMatchException();
+		}
+		//登陆次数 + 1
+		employee.setVisitedTimes(employee.getVisitedTimes()+1);
+		return employee;
+		
+	}
+
+	
+****************那么如何完成原有的登陆逻辑？？？？？？？？？？:
+①. 登陆次数 + 1:
+	> 不能在 EmsUserDetailsService#loadUserByUsername 方法中完成登录次数 + 1, 因为那时候还没有进行密码比对呢. 
+	> 应该在登陆成功之后, 登陆次数 + 1. 此时有两个位置可以来做:
+		> EmsAuthenticationSuccessHandler
+		> EmployeeAction. 可以得到 Employee, 调用 Service 方法使登陆次数 + 1.
+
+②. 把 Employee 放到 Session 中.    
+	> 在 EmployeeAction 中可以把登陆的 Employee 放到 Session 中. 
+	> 在 EmsUserDetailsService#loadUserByUsername 方法中已经获取过 Employee 对象了. 可以使 
+	EmsUserDetailsService#loadUserByUsername 方法返回 User 的一个子类, 其中包含 Employee. 
+	> 在 EmployeeAction 中可以通过 SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+	方法得到 EmsUserDetailsService#loadUserByUsername 方法的返回值, 进而可以得到 Employee
+	
+************具体操作：**********
+
+9.1)注销：
+  com.atguigu.ems.actions.EmployeeAction中的 
+	public String login(){
+		String loginName = model.getLoginName();
+		String password = model.getPassword();
+		Employee employee = employeeService.login(loginName, password);
+		this.session.put("employee", employee);
+		return "success";
+	}	
+	
+9.2 同时在 com.atguigu.ems.actions.EmployeeAction中添加：
+
+	public String login() throws Exception{
+		Object obj = this.request.get("exception");
+		if(obj != null && obj instanceof Exception){
+			throw (Exception)obj;
+		}
+		
+		//获取登录信息 ? 
+		Object object = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+		SecurityUser su = (SecurityUser) object;
+		
+		Employee employee = su.getEmployee();
+		this.session.put("employee", employee);
+		
+		employeeService.updateVisitedTimes(employee.getEmployeeId());
+		
+		return "success";
+	}
+	
+	
+9.3 在 com.atguigu.ems.security.EmsUserDetailsService中添加类：
+
+     public class SecurityUser extends User{
+		
+		private Employee employee;
+		
+		public SecurityUser(String username, String password, boolean enabled,
+				boolean accountNonExpired, boolean credentialsNonExpired,
+				boolean accountNonLocked,
+				Collection<? extends GrantedAuthority> authorities,Employee employee) {
+			super(username, password, enabled, accountNonExpired, credentialsNonExpired,
+					accountNonLocked, authorities);
+			this.employee = employee;
+		}
+	
+		public Employee getEmployee() {
+			return employee;
+		}
+		
+	}	
+	
+	再修改com.atguigu.ems.security.EmsUserDetailsService.loadUserByUsername(String)方法中的
+		User user = new User(username, password, enabled, 
+				accountNonExpired, credentialsNonExpired, accountNonLocked, authorities);
+		
+	
+	修改为：	
+        User user = new SecurityUser(username, password, enabled, 
+				accountNonExpired, credentialsNonExpired, accountNonLocked, authorities,employee);
+		return user;
+	
+	 备注：先写  public class SecurityUser extends User{} 然后点击 SecurityUser 自动添加
+	 复杂构造器，再在构造器的属性中添加 Employee employee，在添加 this.employee = employee;
+	 接着添加 private Employee employee;和 getEmployee()方法。
+	最后修改 User user= new User(......)为 User user = new SecurityUser(.....)
+	 
+9.4 EmployeeDao中添加如下 登录一次就加一的方法。
+
+	public void updateVisitedTimes(Integer id){
+		String hql = "UPDATE Employee e "
+				+ "SET e.visitedTimes = e.visitedTimes + 1 "
+				+ "WHERE e.employeeId = :id";
+		getSession().createQuery(hql).setParameter("id", id).executeUpdate();
+	}	
+	
+9.5 在 EmployeeService中添加如下方法与9.4对接，同时提供给 9.2调用：
+
+    @Transactional
+	public void updateVisitedTimes(Integer id){
+		employeeDao.updateVisitedTimes(id);
+	} 
+	
+9.6 在登录页面http://localhost:8080/EM06/index.jsp
+    中登录 用户 AABBCC 密码 123456 能够成功登录，同时检查数据库，可以看到
+    登录次数已经 增加了 一次。
+    
+9.7 现在只是验证好用了，但当我们输入 用户 AABBCC 密码 123456YYUDDD 即用户密码格式虽然正确，但很随意输入
+时候出现如下：
+Messages:	
+Bad credentials
+File:org/springframework/security/authentication/dao/
+AbstractUserDetailsAuthenticationProvider.java
+
+我们在 struts.xml 配置文件中再添加两个异常映射，它们的名字可以在登录时候错误信息页面中得到：
+我们需要注意：9.2)与7)的异常 "exception"！！！
+
+<exception-mapping result="input" 
+	exception="org.springframework.security.authentication.BadCredentialsException"></exception-mapping>
+<exception-mapping result="input" 
+	exception="org.springframework.security.authentication.DisabledException"></exception-mapping>
+	
+9.8 在 /EM06/conf/i18n.properties中配置国际化：
+
+org.springframework.security.authentication.BadCredentialsException=\u30101\u3011\u7528\u6237\u540d\u4e0d\u5b58\u5728\u6216\u7528\u6237\u540d\u548c\u5bc6\u7801\u4e0d\u5339\u914d!\u2460
+org.springframework.security.authentication.DisabledException=\u30102\u3011\u7528\u6237\u540d\u4e0d\u5b58\u5728\u6216\u7528\u6237\u540d\u548c\u5bc6\u7801\u4e0d\u5339\u914d!\u2460
+
+9.9刷新页面，在登录页面输入格式正确但与数据库不匹配的用户名和密码，能够正确提示错误信息了！！！
+

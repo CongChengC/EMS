@@ -1,0 +1,290 @@
+27. 抽取 Base. BaseDao, BaseService, BaseAction
+1). 目的: 代码的重用. 但需要注意的是: 不要过度设计. 不要为了重用而重用. 
+
+***********具体步骤********************************************
+1)com.atguigu.ems.daos包中建立一个BaseDao：
+备注： 这里需要用到:com.atguigu.ems.util.ReflectionUtils这个工具类！！！！！！
+
+public class BaseDao<T> {
+	
+	@Autowired
+	private SessionFactory sessionFactory;
+	
+	private Class<T> entityClass;
+	
+	public BaseDao() {
+		entityClass = ReflectionUtils.getSuperGenericType(getClass());
+	}
+	
+	
+	public Session getSession(){
+		return sessionFactory.getCurrentSession();
+	}
+	
+	public void saveOrUpdate(T entity){
+		getSession().saveOrUpdate(entity);
+	}
+	
+	public Criteria getCriteria(){
+		return getSession().createCriteria(entityClass);
+	}
+	
+	public void batchSave(List<T> entities) {
+		for(int i = 0; i < entities.size(); i++){
+			getSession().save(entities.get(i));
+			
+			if((i + 1) % 50 == 0){
+				getSession().flush();
+				getSession().clear();
+			}
+		}
+	}
+	
+	public List<T> getAll(){
+		return getCriteria().list();
+	}
+	
+	public T get(Integer id){
+		return (T) getSession().get(entityClass, id);
+	}
+	
+	public Page getPage(int pageNo){
+		Page<T> page = new Page<>();
+		page.setPageNo(pageNo);
+		
+		long totalElements = getTotalElements();
+		page.setTotalElements(totalElements);
+		
+		List<T> content = getContent(page);
+		page.setContent(content);
+		
+		return page;
+	}
+	
+	public List<T> getContent(Page<T> page){
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		return getCriteria().setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+	
+	public long getTotalElements(){
+		//1. 获取实体类的 id 的属性名
+		String idName = getIdName();
+		
+		//2. 查询 id 的 count
+		Projection projection = Projections.count(idName);
+		Criteria criteria = getCriteria().setProjection(projection);
+		
+		return (long) criteria.uniqueResult();
+	}
+	
+	//Hibernate 的 .cfg.xml 文件中包含了所有的 .hbm.xml 文件
+	//即在 SessionFactory 对象创建的时候, 实际上可以得到所有的实体类的映射信息
+	//所以应该可以得到实体类在映射文件中的所有映射细节. 包括 id 的 name 值
+	private String getIdName() {
+		//根据实体类的类型来获取 hibernate 中类的元数据
+		ClassMetadata cmd = sessionFactory.getClassMetadata(entityClass);
+		//再根据 ClassMetadata 得到映射文件中的细节. 例如 id 的名字
+		return cmd.getIdentifierPropertyName();
+	}
+	
+	public T getBy(String propertyName, Object propertyVal){
+		Criteria criteria = getCriteria();
+		
+		Criterion criterion = Restrictions.eq(propertyName, propertyVal);
+		criteria.add(criterion);
+		
+		return (T) criteria.uniqueResult();
+	}
+	
+
+}
+
+
+2)把 com.atguigu.ems.daos.EmployeeDao中代码注销，然后把名字修改为：
+@Repository
+public class EmployeeDao extends BaseDao<Employee> {}
+
+3)com.atguigu.ems.services.EmployeeService中：
+
+3.1) com.atguigu.ems.services.EmployeeService.updateVisitedTimes(Integer)修改为：
+	
+	@Transactional
+	public void updateVisitedTimes(Integer id){
+		Employee employee = employeeDao.get(id);
+		employee.setVisitedTimes(employee.getVisitedTimes() + 1);
+	}
+	
+3.2) com.atguigu.ems.services.EmployeeService.save(Employee)修改为：
+
+	@Transactional
+	public void save(Employee employee){
+		//添加
+		if(employee.getEmployeeId() == null){
+			//后边需要进行调整
+			employee.setPassword("123456");
+		}
+		employeeDao.saveOrUpdate(employee);
+	}
+
+3.3) com.atguigu.ems.services.EmployeeService.getByLoginName(String)修改为：
+
+	@Transactional(readOnly=true)
+	public Employee getByLoginName(String loginName){
+		return employeeDao.getBy("loginName", loginName);
+	}
+	
+3.4)com.atguigu.ems.services.EmployeeService.login(String, String)修改为：
+
+    @Transactional
+	public Employee login(String loginName, String password){
+		Employee employee = employeeDao.getBy("loginName", loginName);
+		if(employee == null){
+			throw new LoginNameNotFoundException();
+		}
+		if(employee.getIsDeleted() == 1){
+			throw new EmployeeIsDeletedException();
+		}
+		if(employee.getEnabled() != 1){
+			throw new EmployeeDisabledException();
+		}
+		if(!password.equals(employee.getPassword())){
+			throw new PasswordNotMatchException();
+		}
+		//登陆次数 + 1
+		employee.setVisitedTimes(employee.getVisitedTimes()+1);
+		return employee;
+		
+	}
+	
+	
+4)登陆 AABBCC 123456 进行测试验证，登陆验证OK;员工添加OK；员工查询
+      发现异常 ： could not initialize proxy - no Session
+ 
+ 我们把com.atguigu.ems.services.EmployeeService.getPage(int)修改如下：
+ 
+原来是这样：
+	@Transactional(readOnly=true)
+	public Page<Employee> getPage(int pageNo){
+		return employeeDao.getPage(pageNo);
+	} 
+修改后：
+	@Transactional(readOnly=true)
+	public Page<Employee> getPage(int pageNo){
+		Page<Employee> page =  employeeDao.getPage(pageNo);
+		for(Employee employee: page.getContent()){
+			Hibernate.initialize(employee.getDepartment());
+			Hibernate.initialize(employee.getRoles());
+		}
+		return page;
+	}
+再测试，在员工查询的时候，用Ajax当点击下一页的时候，又抱错了，但是直接在浏览地址中输入页码，不会报错！！坑坑啊！！！ 
+ 
+ 
+5)我们在  ApplicationContextTest 添加如下测试方法：
+  可以改变页数，可以增减输出项，查找那里出了问题！！！！
+	@Test
+	public void testGetPage2(){
+		Page<Employee> page = employeeService.getPage(2);
+		
+		for(Employee emp: page.getContent()){
+//			System.out.println(emp.getLoginName());
+//			System.out.println(emp.getEmployeeName());
+//			System.out.println(emp.getEnabled());
+			
+			System.out.println(emp.getDepartmentName());
+			System.out.println(emp.getDisplayBirth());
+//			System.out.println(emp.getGender());
+			
+//			System.out.println(emp.getEmail());
+//			System.out.println(emp.getMobilePhone());
+//			System.out.println(emp.getVisitedTimes());
+			
+			System.out.println("--" + emp.getRoleNames() + "--");
+			System.out.println();
+		}
+		
+		System.out.println(page.getContent().size());
+	} 
+      
+6)**********************先不管，继续下面的提取吧***********************************
+com.atguigu.ems.daos.AuthorityDao 中 
+
+	public List<Authority> getByNotNull(String propertyName){
+		Criterion criterion = Restrictions.isNotNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+	
+	public List<Authority> getByNull(String propertyName){
+		Criterion criterion = Restrictions.isNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+	
+	把上面的剪切到父类，再修改为：
+	
+		public List<T> getByNotNull(String propertyName){
+		Criterion criterion = Restrictions.isNotNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+	
+	public List<T> getByNull(String propertyName){
+		Criterion criterion = Restrictions.isNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+
+ 7)注销 com.atguigu.ems.daos.AuthorityDao中代码,然后 AuthorityDao继承BaseDao：
+@Repository
+public class AuthorityDao extends BaseDao<Authority> {}
+  
+ 8) 注销 com.atguigu.ems.daos.DepartmentDao中代码，然后继承BaseDao 
+@Repository
+public class DepartmentDao extends BaseDao<Department>{}
+
+9)修改 com.atguigu.ems.services.EmployeeService.delete(Integer)中的
+  Department department = departmentDao.getByManager(manager);
+  为  Department department = departmentDao.getBy("manager", manager);
+  
+  
+ 10)com.atguigu.ems.daos.ResourceDao注销内部代码
+    继承BaseDao： 
+ @Repository
+public class ResourceDao extends BaseDao<Resource> {}   
+
+
+11)把方法 com.atguigu.ems.daos.RoleDao.getByIn(String, List<? extends Object>) 剪切到 BaseDao
+把方法 com.atguigu.ems.daos.RoleDao内部代码注销，然后：
+@Repository
+public class RoleDao extends BaseDao<Role>{}
+
+
+12) 因为 一直 有懒加载异常，我们对：
+
+    com.atguigu.ems.daos.EmployeeDao中如下方法，我们取消注销：
+    
+	public List<Employee> getContent(Page<Employee> page){
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		String hql = "FROM Employee e "
+				+ "LEFT OUTER JOIN FETCH e.department "
+				+ "LEFT OUTER JOIN FETCH e.roles ";
+		return getSession().createQuery(hql).setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+	
+登录 AABBCC 123456 点击员工查询的时候，点上下页进行翻页的是后可以正常翻页！！
+
+
+   

@@ -1,0 +1,117 @@
+15.0 loginName 的 Ajax 验证: 通过 Ajax 验证 loginName 是否合法. 
+1). 实际上是服务端的复杂验证: 即验证 loginName 在数据表中是否有对应的记录, 若有, 则 alert: 不能使用. 
+否则: alert: 可以使用
+
+2). Action 方法的响应是一个标记位即可: 1 代表可用, 0 代表不可用. Action 方法如何放回标记位呢 ?
+①. 使用了 Servlet 原生的 API.
+
+3). loginName 这个请求参数, 如何在 Action 的方法中得到呢 ? 
+①. ModelDriven, 通过调用 model.getLoginName() 方法来获取 loginName 属性. 仅需要获取 loginName 属性, 还创建了一个
+Employee 对象, 有些浪费.
+②. 把 loginName 作为当前 Action 的成员变量. loginName 并非像 id 那样常用, loginName 或许只能被当前 Action 的诸多方法
+使用一次, 所以作为成员变量, 也有些浪费
+③. 在 Action 方法得到 loginName 的值, 且 loginName 是方法的局部变量. 如何来得到他呢 ? 
+	> request.getParameter: 使用了 Servlet 原生的 API. 较为粗暴. 
+	> 利用 ParameterAware 接口. 
+
+4). 
+********************具体操作***************************************************
+15.1 /EM03/src/com/atguigu/ems/daos/EmployeeDao.java中已经有DAO
+    
+    public Employee getByLoginName(String loginName){
+		String hql = "FROM Employee e WHERE e.loginName = :loginName";
+		Query query = getSession().createQuery(hql).setParameter("loginName", loginName);
+		return (Employee) query.uniqueResult();
+	}
+	
+15.2 com.atguigu.ems.services.EmployeeService中添加方法如下：
+    @Transactional(readOnly=true)
+	public Employee getByLoginName(String loginName){
+		return employeeDao.getByLoginName(loginName);
+	}
+	
+15.3 打开 com.atguigu.ems.actions.EmployeeAction
+     loginName 这个请求参数, 如何在 Action 的方法中得到呢 ? 
+               在 Action 方法得到 loginName 的值, 且 loginName 是方法的局部变量. 如何来得到他呢 ? 
+     > request.getParameter: 使用了 Servlet 原生的 API. 较为粗暴. 
+     > 利用 ParameterAware 接口.
+     
+@Scope("prototype")
+@Controller
+public class EmployeeAction extends ActionSupport 
+	implements ModelDriven<Employee>, Preparable, SessionAware, RequestAware, ParameterAware{}
+	
+	
+	在EmployeeAction  添加如下方法：
+	
+	public void validateLoginName() throws IOException{
+		String result = "1";
+		String loginName = this.params.get("loginName")[0];
+		Employee employee = employeeService.getByLoginName(loginName);
+		if(employee !=null){
+			result = "0";
+		}
+		ServletActionContext.getResponse().getWriter().print(result);
+	}
+	
+	
+	private Map<String, String[]> params = null;
+		
+	@Override
+	public void setParameters(Map<String, String[]> arg0) {
+         this.params = arg0;		
+	} 
+
+15.4 ServletActionContext.getResponse().getWriter().print(result)还是用了原生的API，我们也有别的办法
+我们找到：OpenSource/OpenSource/struts-2.3.15.3-all/struts-2.3.15.3/docs/WW/docs/ajax.html
+里面有例子（当然还有别的例子）：
+Both Struts 1 and Struts 2 can return any type of response.
+ We are not limited to forwarding to a server page. In Struts 1, 
+ you can just do something like:
+
+response.setContentType("text/html");
+PrintWriter out = response.getWriter();
+out.println("Hello World!  This is an AJAX response from a Struts Action.");
+out.flush();
+return null;	
+
+15.5 我们还是用15.3吧！！！！！在input.jsp的 $(function(){}函数中加入如下校验代码
+
+        //loginName 的 Ajax 校验
+    		$("#loginName").change(function(){
+    			var val = this.value;
+    			val = $.trim(val);
+    			this.value = val;
+    			
+    			if(val == ""){
+    				alert("LoginName 不能为空!");
+    				return;
+    			}
+    			if(val.length < 6){
+    				alert("LoginName 不能少于 6 个字符!");
+    				return;
+    			}
+    			var reg = /^[a-zA-Z]\w+\w$/g;
+    			if(!reg.test(val)){
+    				alert("LoginName 不合法!");
+    				return;
+    			}
+    			
+    			//注意这里 validateLoginName正好对应com.atguigu.ems.actions.EmployeeAction中的
+    			//validateLoginName方法，这里用来与数据库对比验证。
+    			var url = "${ctp}/emp-validateLoginName";
+    			var args = {"loginName":val,"time":new Date()};
+    			$.post(url, args, function(data){
+    				if(data == "1"){
+    					alert("LoginName 可用!");
+    				}else if(data == "0"){
+    					alert("LoginName 不可用!");
+    				}else{
+    					alert("请稍后重试!");
+    				}
+    			});
+        	});
+		
+15.6 清理服务器，重启服务器，然后run as 工程，然后登录，然后浏览器中输入
+http://localhost:8080/EM03/emp-input，再于loginName，和Emai输入空格中
+输入信息，进行验证，测试代码效果！！！

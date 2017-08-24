@@ -1,0 +1,568 @@
+20.POI操作Excel数据下载：
+1). Struts2 如何完成文件的下载: 使用 Stream 类型的 result. 具体使用可以参看 StreamResult 的 JavaDoc
+2). 如何生成 Excel 文件: 使用 POI 来操作 Excel. 具体参看:
+poi-3.5-FINAL\docs\spreadsheet\quick-guide.html
+3). 具体完成的步骤:
+①. 先完成 Action 部分的代码: 提供一个动态的 Excel 文档的下载.
+	> 调用 Service 的方法. Service 方法会在服务器的一个目录下生成一个临时文件
+	> inputStream 指向临时文件即可
+	> 下载完成后, 要能够删除临时文件. 在拦截器中删除比较合适. 
+	> 既然是临时文件, 则其文件名应该是一个随机的文件名. 
+②. 自定义拦截器, 删除临时文件. 
+	> 创建一个类, 实现 Interceptor 接口
+	> 在配置文件中进行配置. 
+	> 需要在拦截器调用了 invocation.invoke(); 之后进行删除. 因为在 invocation.invoke(); 之前, 目标方法还未执行呢.
+	> 如何在拦截器中得到临时文件的文件名: 
+③. 
+******************具体步骤*********************************************************
+1) 打开OpenSource2/poi-src-3.5-FINAL-20090928/poi-3.5-FINAL/docs/index.html 点击 HSSF+XSSF 
+   会接着打开：OpenSource2/poi-src-3.5-FINAL-20090928/poi-3.5-FINAL/docs/spreadsheet/index.html 点击左边 Quick Guide
+   有很多例子：
+   
+2)下面是 required包，黏贴到 lib 中
+geronimo-stax-api_1.0_spec-1.0.jar
+ooxml-schemas-1.0.jar
+poi-3.5-FINAL-20090928.jar
+poi-contrib-3.5-FINAL-20090928.jar
+poi-ooxml-3.5-FINAL-20090928.jar
+poi-scratchpad-3.5-FINAL-20090928.jar
+xmlbeans-2.3.0.jar
+
+
+3) com.atguigu.ems.test.EmsTest中新建方法,粘贴代码后，注意ctrl+shif+O  在点选相关接口,
+         注意例子中路径与我们自己的不同，自己设置了路径为：i:\\workbook.xls
+	// Workbook 即为一个 Excel 文档.
+	@Test
+	public void testNewWorkbook() throws IOException {
+		Workbook wb = new HSSFWorkbook();
+		FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+		wb.write(fileOut);
+		fileOut.close();
+	}
+	
+	
+	        备注：上述代码中的
+	    Workbook wb = new HSSFWorkbook();
+	    FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+	    wb.write(fileOut);
+	    fileOut.close();
+	            是来自，New Workbook例子：
+	            
+	    run 一下上面的  @test ，便在i盘生成了一个  一个        workbook.xls 文件，虽然打开会有一点点问题！！  
+		
+4) 仿照例子中的  New Sheet，然后 com.atguigu.ems.test.EmsTest中添加如下代码：
+
+   	// Sheet: 代表具体的工作表.
+	// 可通过调用 Workbook 的 createSheet 方法来进行创建
+	@Test
+	public void testNewSheet() throws IOException{
+	    Workbook wb = new HSSFWorkbook();
+	    //Workbook wb = new XSSFWorkbook();
+	    Sheet sheet1 = wb.createSheet("new sheet");
+	    Sheet sheet2 = wb.createSheet("second sheet");
+	    FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+	    wb.write(fileOut);
+	    fileOut.close();
+	}
+	
+	运行一下，i:\\workbook.xls中得到Excel表格可以打开了。
+	
+5)仿照例子中的  Creating Cells 代码， com.atguigu.ems.test.EmsTest中建立如下方法：
+
+    // Row: Excel 文档中的一行
+	// Cell: Excel 文档中的一个单元格.
+	// 可以通过调用 setCellValue 直接为单元格填充值
+    @Test
+	public void testCreateCell() throws IOException{
+		Workbook wb = new HSSFWorkbook();
+	    //Workbook wb = new XSSFWorkbook();
+	    CreationHelper createHelper = wb.getCreationHelper();
+	    Sheet sheet = wb.createSheet("new sheet");
+
+	    // Create a row and put some cells in it. Rows are 0 based.
+	    Row row = sheet.createRow((short)0);
+	    // Create a cell and put a value in it.
+	    Cell cell = row.createCell(0);
+	    cell.setCellValue(1);
+
+	    // Or do it on one line.
+	    row.createCell(1).setCellValue(1.2);
+        row.createCell(2).setCellValue("This is a string");
+	    row.createCell(3).setCellValue(true);
+
+	    // Write the output to a file
+	    FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+	    wb.write(fileOut);
+	    fileOut.close();
+	}
+	
+	运行一下这个 @Test，(注意关闭打开的workbook.xls)。运行后点开该文件，可以看到Excel文件中有内容！！
+	内容： 1	1.2	This is a string	TRUE
+	
+6)粘贴例子  Creating Date Cells，在 com.atguigu.ems.test.EmsTest中建立如下方法：
+    // 不能把 Date 对象作为参数直接传递给 Cell 的 setCellValue 方法.
+	// 需要使用 CellStyle 来设置日期的格式. 而 CellStyle 需要由 Workbook 来进行创建
+	// 设置日期格式的时候, 需要 CreationHelper
+	@Test
+	public void testCreateDateCell() throws IOException{
+		Workbook wb = new HSSFWorkbook();
+	    //Workbook wb = new XSSFWorkbook();
+	    CreationHelper createHelper = wb.getCreationHelper();
+	    Sheet sheet = wb.createSheet("new sheet");
+
+	    // Create a row and put some cells in it. Rows are 0 based.
+	    Row row = sheet.createRow(0);
+
+	    // Create a cell and put a date value in it.  The first cell is not styled
+	    // as a date.
+	    Cell cell = row.createCell(0);
+	    cell.setCellValue(new Date());
+
+	    // we style the second cell as a date (and time).  It is important to
+	    // create a new cell style from the workbook otherwise you can end up
+	    // modifying the built in style and effecting not only this cell but other cells.
+	    CellStyle cellStyle = wb.createCellStyle();
+	    cellStyle.setDataFormat(
+	        createHelper.createDataFormat().getFormat("m/d/yy h:mm"));
+	    cell = row.createCell(1);
+	    cell.setCellValue(new Date());
+	    cell.setCellStyle(cellStyle);
+
+	    //you can also set date as java.util.Calendar
+	    cell = row.createCell(2);
+	    cell.setCellValue(Calendar.getInstance());
+	    cell.setCellStyle(cellStyle);
+
+	    // Write the output to a file
+	    FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+	    wb.write(fileOut);
+	    fileOut.close();
+	}
+	
+	运行方法后，workbook.xls中有如下内容：
+	42458.87704	      2016/3/29 21:02	      2016/3/29 21:02
+	
+7.1)把Demonstrates various alignment options例子中的 对齐方法 粘贴到  com.atguigu.ems.test.EmsTest中
+/**
+     * Creates a cell and aligns it a certain way.
+     *
+     * @param wb     the workbook
+     * @param row    the row to create the cell in
+     * @param column the column number to create the cell in
+     * @param halign the horizontal alignment for the cell.
+     */
+    private static void createCell(Workbook wb, Row row, short column, short halign, short valign) {
+        Cell cell = row.createCell(column);
+        cell.setCellValue(new XSSFRichTextString("Align It"));
+        CellStyle cellStyle = wb.createCellStyle();
+        cellStyle.setAlignment(halign);
+        cellStyle.setVerticalAlignment(valign);
+        cell.setCellStyle(cellStyle);
+    }
+    
+7.2) 仿照 Demonstrates various alignment options例子中 主方法，我们建立如下代码：
+
+   //可以通过调用 Row 的 setHeightInPoints 方法来设置单元格的行高
+	//可以通过 CellStyle 来设置单元格中文本的对齐方式. 
+	@Test
+	public void testAlignmentOptions() throws IOException{
+		Workbook wb = new XSSFWorkbook(); //or new HSSFWorkbook();
+
+        Sheet sheet = wb.createSheet();
+        Row row = sheet.createRow((short) 2);
+        row.setHeightInPoints(30);
+
+        createCell(wb, row, (short) 0, XSSFCellStyle.ALIGN_CENTER, XSSFCellStyle.VERTICAL_BOTTOM);
+        createCell(wb, row, (short) 1, XSSFCellStyle.ALIGN_CENTER_SELECTION, XSSFCellStyle.VERTICAL_BOTTOM);
+        createCell(wb, row, (short) 2, XSSFCellStyle.ALIGN_FILL, XSSFCellStyle.VERTICAL_CENTER);
+        createCell(wb, row, (short) 3, XSSFCellStyle.ALIGN_GENERAL, XSSFCellStyle.VERTICAL_CENTER);
+        createCell(wb, row, (short) 4, XSSFCellStyle.ALIGN_JUSTIFY, XSSFCellStyle.VERTICAL_JUSTIFY);
+        createCell(wb, row, (short) 5, XSSFCellStyle.ALIGN_LEFT, XSSFCellStyle.VERTICAL_TOP);
+        createCell(wb, row, (short) 6, XSSFCellStyle.ALIGN_RIGHT, XSSFCellStyle.VERTICAL_TOP);
+
+        // Write the output to a file
+        FileOutputStream fileOut = new FileOutputStream("i:\\xssf-align.xlsx");
+        wb.write(fileOut);
+        fileOut.close();
+	}
+	
+	运行上面的方法，xssf-align.xlsx表可以得到如下内容：它们的对齐方式不一样
+	Align It	Align It	Align It	Align It	Align It	Align It	Align It
+	
+	
+8). 仿照 Working with borders 在 com.atguigu.ems.test.EmsTest中建立如下方法：
+//通过 CellStyle 来设定边框的样式
+	@Test
+	public void testBorders() throws IOException{
+		Workbook wb = new HSSFWorkbook();
+	    Sheet sheet = wb.createSheet("new sheet");
+
+	    // Create a row and put some cells in it. Rows are 0 based.
+	    Row row = sheet.createRow(1);
+
+	    // Create a cell and put a value in it.
+	    Cell cell = row.createCell(1);
+	    cell.setCellValue(4);
+
+	    // Style the cell with borders all around.
+	    CellStyle style = wb.createCellStyle();
+	    style.setBorderBottom(CellStyle.BORDER_THIN);
+	    style.setBottomBorderColor(IndexedColors.BLACK.getIndex());
+	    style.setBorderLeft(CellStyle.BORDER_THIN);
+	    style.setLeftBorderColor(IndexedColors.GREEN.getIndex());
+	    style.setBorderRight(CellStyle.BORDER_THIN);
+	    style.setRightBorderColor(IndexedColors.BLUE.getIndex());
+	    style.setBorderTop(CellStyle.BORDER_MEDIUM_DASHED);
+	    style.setTopBorderColor(IndexedColors.BLACK.getIndex());
+	    cell.setCellStyle(style);
+
+	    // Write the output to a file
+	    FileOutputStream fileOut = new FileOutputStream("i:\\workbook.xls");
+	    wb.write(fileOut);
+	    fileOut.close();
+	}
+	
+	运行上面方法，在	workbook.xls表中我们得到一个 数字 “4”，它的边框每一边都不同！！！
+	例子中还有许多其他方法，我们暂不测试！！！！
+	
+9)《《《《《《《《《《下面是在工程中完成相关下载操作《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《《
+具体完成的步骤:
+9.1). 先完成 Action 部分的代码: 提供一个动态的 Excel 文档的下载.
+       把ActionTest中的代码粘贴到  EmployeeAction中；即下面的代码：但要修改 代码中的testFileDownload()方法
+ ***********************************************************************  
+    //输入流
+	private InputStream inputStream;
+	//文件下载的类型
+	private String contentType;
+	//下载的文件的长度
+	private long contentLength;
+	//下载的文件的文件名
+	private String fileName;
+	
+	public InputStream getInputStream() {
+		return inputStream;
+	}
+	public String getContentType() {
+		return contentType;
+	}
+	public long getContentLength() {
+		return contentLength;
+	}
+	public String getContentDisposition () {
+		return "attachment;filename=" + fileName;
+	}
+	
+	public String testFileDownload() throws IOException{
+		//确定文件下载相关的成员变量的值
+		inputStream = ServletActionContext.getServletContext().getResourceAsStream("/test/helloworld.txt");
+		contentType = "text/html";
+		contentLength = inputStream.available();
+		fileName = "helloworld.txt";
+		
+		return "download-success";
+	}
+	
+	*********修改 代码中的testFileDownload()方法***************
+	注意：testFileDownload()方法名字改为 download方法;
+	输入流inputStream改为inputStream= null;
+	在D:\Program Files\apache-tomcat-6.0.43-windows-x86\apache-tomcat-6.0.43\conf中打开web.xml
+	ctrl+F搜索excel，找到Excel格式：  application/vnd.ms-excel
+	把修改为contentType ="application/vnd.ms-excel"
+	文件名修改为：fileName = "employees.txt";
+	
+	即download方法如下：
+	
+		public String download() throws IOException{
+			//确定文件下载相关的成员变量的值
+			inputStream = null;
+			contentType = "application/vnd.ms-excel";
+			contentLength = inputStream.available();
+			fileName = "employees.txt";
+			return "download-success";
+		}
+*********************************************************************************************************   
+9.2)在  /EM04/conf/struts.xml添加： <result type="stream" name="download-success"></result>
+      到	<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+	</action>  中。
+
+9.3)	
+	> 调用 Service 的方法. Service 方法会在服务器的一个目录下生成一个临时文件
+	> inputStream 指向临时文件即可
+	> 下载完成后, 要能够删除临时文件. 在拦截器中删除比较合适. 
+	> 既然是临时文件, 则其文件名应该是一个随机的文件名. 
+9.3.1 在/EM04/WebContent/files建立files文件夹
+9.3.2 继续修改com.atguigu.ems.actions.EmployeeAction中的download方法如下：
+	 	
+	 	public String download() throws IOException{
+			//确定文件下载相关的成员变量的值
+			String tempFileName = System.currentTimeMillis() + ".xls";
+			tempFileName = ServletActionContext.getServletContext().getRealPath("/files/" + tempFileName);
+			employeeService.downloadFile(tempFileName);
+			inputStream = new FileInputStream(tempFileName); 
+			contentType = "application/vnd.ms-excel";
+			contentLength = inputStream.available();
+			fileName = "employees.xls";
+			return "download-success";
+		}
+	
+9.3.3  在 com.atguigu.ems.services.EmployeeService中添加如下方法：
+    @Transactional(readOnly=true)
+	public void downloadFile(String tempFileName) {
+		
+	}
+	
+	把  com.atguigu.ems.test.EmsTest.testCreateCell()中的代码粘贴到上面的downloadFile方法中：
+	并且： i:\\workbook.xls 修改为  tempFileName;所得到的方法代码如下：
+	
+	@Transactional(readOnly=true)
+	public void downloadFile(String tempFileName) throws IOException {
+		Workbook wb = new HSSFWorkbook();
+	    //Workbook wb = new XSSFWorkbook();
+	    CreationHelper createHelper = wb.getCreationHelper();
+	    Sheet sheet = wb.createSheet("new sheet");
+
+	    // Create a row and put some cells in it. Rows are 0 based.
+	    Row row = sheet.createRow((short)0);
+	    // Create a cell and put a value in it.
+	    Cell cell = row.createCell(0);
+	    cell.setCellValue(1);
+
+	    // Or do it on one line.
+	    row.createCell(1).setCellValue(1.2);
+	    row.createCell(2).setCellValue("This is a string");
+	    row.createCell(3).setCellValue(true);
+
+	    // Write the output to a file
+	    FileOutputStream fileOut = new FileOutputStream(tempFileName);
+	    wb.write(fileOut);
+	    fileOut.close();
+	}	
+
+
+9.3.4 修改 list2.jsp中的下载链接如下：
+      <a href="${ctp}/emp-download">下载到 Excel 中</a>
+		&nbsp;&nbsp;&nbsp;&nbsp;
+		
+9.3.5 运行工程，在360浏览器中：http://localhost:8080/EM04/emp-list
+                  点击 下载到 Excel 中     然后就可以下载一个文件到达桌面。打开文件，里面内容为：
+      1	1.2	This is a string	TRUE
+                 
+   *******  说明下载流程已经打通！！！！**********
+      
+我们可以把 tempFileName 打印到控制台，
+D:\DevWorkSpace\javaEE0917SVN\.metadata\.plugins\org.eclipse.wst.server.core\tmp1\wtpwebapps\EM04\files
+ 然后看到  Service 方法会在服务器的一个目录下生成一个个的临时文件
+
+9.4) 	
+②. 自定义拦截器, 删除临时文件. 
+	> 创建一个类, 实现 Interceptor 接口
+	> 在配置文件中进行配置. 
+	> 需要在拦截器调用了 invocation.invoke(); 之后进行删除. 因为在 invocation.invoke(); 之前, 目标方法还未执行呢.
+	> 如何在拦截器中得到临时文件的文件名: 
+③. 
+
+9.4.1 com.atguigu.ems.actions.EmployeeAction的download方法中
+                  把文件放在请求域中 
+        public String download() throws IOException{
+			//确定文件下载相关的成员变量的值
+			String tempFileName = System.currentTimeMillis() + ".xls";
+			tempFileName = ServletActionContext.getServletContext().getRealPath("/files/" + tempFileName);
+			
+			//把文件放在请求域中
+			request.put("tempFileName", tempFileName);
+			
+			employeeService.downloadFile(tempFileName);
+			inputStream = new FileInputStream(tempFileName); 
+			contentType = "application/vnd.ms-excel";
+			contentLength = inputStream.available();
+			fileName = "employees.xls";
+			return "download-success";
+		}
+		
+9.4.2 建一个包 com.atguigu.ems.interceptors，
+然后包中见一个类com.atguigu.ems.interceptors.FileCleanerInterceptor
+实现   import com.opensymphony.xwork2.interceptor.Interceptor;代码如下：
+
+public class FileCleanerInterceptor implements Interceptor {
+
+	@Override
+	public void destroy() {}
+
+	@Override
+	public void init() {}
+
+	@Override
+	public String intercept(ActionInvocation invocation) throws Exception {
+        String result = invocation.invoke();
+		//删除临时文件
+        //1. 把文件名从 request中取出来
+        Map<String, Object> request = (Map<String, Object>) invocation.getInvocationContext().get("request");
+        String tempFileName = (String) request.get("tempFileName");
+        if(tempFileName != null){
+        	System.out.println("---- >" + tempFileName);
+        }
+        
+        return result;
+	}
+
+}
+
+9.4.3) 在 struts.xml 的 <interceptors></interceptors> 加入我们自己的拦截器
+
+<interceptors>
+	<interceptor name="fileCleaner" class="com.atguigu.ems.interceptors.FileCleanerInterceptor"></interceptor>
+	<interceptor-stack name="emsStack">
+		<interceptor-ref name="fileCleaner"></interceptor-ref>
+		<interceptor-ref name="paramsPrepareParamsStack">
+			<param name="chain.copyFieldErrors">true</param>
+			<param name="prepare.alwaysInvokePrepare">false</param>
+		</interceptor-ref>
+	</interceptor-stack>
+</interceptors>
+
+9.4.4)我们在 http://localhost:8080/EM04/emp-list点击 下载到 Excel 中    可以看到 控制台 打印出了 
+ ---- >D:\DevWorkSpace\javaEE0917SVN\.metadata\.plugins\org.eclipse.wst.server.core\tmp1\wtpwebapps\EM04\files\1459268174585.xls
+说明拦截器设置成功了，我们继续对拦截器进行如下修改：
+public class FileCleanerInterceptor implements Interceptor {
+
+	@Override
+	public void destroy() {}
+
+	@Override
+	public void init() {}
+
+	@Override
+	public String intercept(ActionInvocation invocation) throws Exception {
+        String result = invocation.invoke();
+		//删除临时文件
+        //1. 把文件名从 request中取出来
+        Map<String, Object> request = (Map<String, Object>) invocation.getInvocationContext().get("request");
+        String tempFileName = (String) request.get("tempFileName");
+        if(tempFileName != null){
+        	//System.out.println("---- >" + tempFileName);
+        	Thread.sleep(5000);
+        	File file = new File(tempFileName);
+        	if(file.exists()){
+        		file.delete();
+        	}
+        }
+        return result;
+	}
+}
+
+9.4.5)刷新页面,http://localhost:8080/EM04/emp-list点击下载，然后观察：
+D:\DevWorkSpace\javaEE0917SVN\.metadata\.plugins\org.eclipse.wst.server.core\tmp1\wtpwebapps\EM04\files
+里面生成了一个临时文件，过了几秒后就被删除了
+
+****************前面是打通流程，下一步为工程中的数据下载操作************************************************
+9.5) 修改com.atguigu.ems.services.EmployeeService.downloadFile(String)方法：
+
+    @Transactional(readOnly = true)
+	public void downloadFile(String tempFileName) throws IOException {
+		Workbook wb = new HSSFWorkbook();
+		Sheet sheet = wb.createSheet("employees");
+
+		// 读取所有的 Employee. 把他们添加到 Excel 文档中.
+		// 1. 填充 "标题" 行: 序号 登录名 姓名 性别 登录许可 部门 E-mail 角色
+		setTitles(sheet);
+
+		// 2. 读取所有的 Employee. 且要读取 department 和 roles
+		// 3. 把所有的 Employee 填充都 Excel 文档中
+		setContent(sheet);
+
+		// 4. 设置 CellStyle: 行高, 列宽, 边框
+		setCellStyle(wb);
+
+		FileOutputStream fileOut = new FileOutputStream(tempFileName);
+		wb.write(fileOut);
+		fileOut.close();
+	}
+	
+9.6) 建立 1. 填充 "标题" 行: 方法  com.atguigu.ems.services.EmployeeService.setTitles(Sheet)：
+
+	//序号    登录名     姓名     性别     登录许可     部门        E-mail    角色
+	private void setTitles(Sheet sheet) {
+		String [] titles = {"序号","登录名","姓名", "性别", "登录许可", "部门", "E-mail", "角色"};
+        Row row = sheet.createRow(0);
+		for(int i = 0; i < titles.length; i++){
+			row.createCell(i).setCellValue(titles[i]);
+		}
+	}
+
+9.7)把所有的 Employee 填充都 Excel 文档中:com.atguigu.ems.services.EmployeeService.setContent(Sheet)
+
+	private void setContent(Sheet sheet) {
+		List<Employee> employees = employeeDao.getAll();
+
+		for (int i = 0; i < employees.size(); i++) {
+			Employee employee = employees.get(i);
+
+			Row row = sheet.createRow(i + 1);
+
+			row.createCell(0).setCellValue("" + (i + 1));
+			row.createCell(1).setCellValue("" + employee.getLoginName());
+
+			row.createCell(2).setCellValue("" + employee.getEmployeeName());
+			row.createCell(3).setCellValue("" + employee.getGender());
+
+			row.createCell(4).setCellValue("" + employee.getEnabled());
+			row.createCell(5).setCellValue("" + employee.getDepartmentName());
+
+			row.createCell(6).setCellValue("" + employee.getEmail());
+			row.createCell(7).setCellValue("" + employee.getRoleNames());
+		}
+	}
+	
+9.8)建立 com.atguigu.ems.daos.EmployeeDao.getAll()：因为9.7)yao 调用改方法
+	
+	public List<Employee> getAll(){
+		String hql = "FROM Employee e "
+				+ "LEFT OUTER JOIN FETCH e.department "
+				+ "LEFT OUTER JOIN FETCH e.roles ";
+		return getSession().createQuery(hql).list();
+	}
+	
+9.9)// 4. 设置 CellStyle: 行高, 列宽, 边框com.atguigu.ems.services.EmployeeService.setCellStyle(Workbook):
+
+    private void setCellStyle(Workbook wb) {
+		CellStyle cellStyle = getCellStyle(wb);
+
+		Sheet sheet = wb.getSheet("employees");
+
+		// 行高. 注意: i <= sheet.getLastRowNum()
+		for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+			Row row = sheet.getRow(i);
+			row.setHeightInPoints(30);
+
+			// 列宽
+			for (int j = 0; j < row.getLastCellNum(); j++) {
+				// 自动设置列宽
+				sheet.autoSizeColumn(j);
+				sheet.setColumnWidth(j, (int) (sheet.getColumnWidth(j) * 1.5));
+
+				// 设置边框
+				Cell cell = row.getCell(j);
+				cell.setCellStyle(cellStyle);
+			}
+		}
+	}
+	
+9.10)com.atguigu.ems.services.EmployeeService.getCellStyle(Workbook) 因为9.9)要调用该方法：
+
+	private CellStyle getCellStyle(Workbook wb) {
+		CellStyle style = wb.createCellStyle();
+		style.setBorderBottom(CellStyle.BORDER_THIN);
+		style.setBottomBorderColor(IndexedColors.BLACK.getIndex());
+		style.setBorderLeft(CellStyle.BORDER_THIN);
+		style.setLeftBorderColor(IndexedColors.BLACK.getIndex());
+		style.setBorderRight(CellStyle.BORDER_THIN);
+		style.setRightBorderColor(IndexedColors.BLACK.getIndex());
+		style.setBorderTop(CellStyle.BORDER_THIN);
+		style.setTopBorderColor(IndexedColors.BLACK.getIndex());
+
+		return style;
+	}
+	
+9.11）进入 http://localhost:8080/EM05/emp-list页面进行下载，在查看得到的Excel表格！！！		

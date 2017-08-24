@@ -1,0 +1,302 @@
+11. Ajax 的删除
+1). 需求: 
+①. confirm: 确定要删除xx的信息吗? xx 为所在行的 loginName
+②. 若确定, 则发送 Ajax 请求: 若当前行所在的记录是某一个 Department 的 manager, 则不能删除, alert: 是 Manager, 不能删除!
+④. 若不是 manager, 则 Ajax 删除. 且更新分页信息. 
+
+2). xx 从哪里来? 使用隐藏域的方式
+<a class="delete" href="emp-delete?id=${employeeId }">删除</a>
+<input type="hidden" value="${loginName }"/>
+注意: 这也意味着, 在使用 Ajax 分页创建 a 节点时, 也需要创建对应的 hidden 节点. 
+
+3). 发送 Ajax 请求:
+①. 需要传入当前页面的 pageNo. 新建了一个隐藏域来存当前页面的 pageNo:
+<input type="hidden" id="pageNo" value="${page.pageNo }"/>
+注意: 这也意味着, 在使用 Ajax 分页时需要更新该 pageNo 的值!
+$("#pageNo").val(data.pageNo);
+
+4). 删除: 实际上不是真正的删除: 而是把 isDeleted 属性值修改为 1. 
+①. EmployeeService 的 delete 方法:
+	> 查询 id 对应的 Employee 是否为某一个 Department 的 manager
+	> 若不是, 则修改该 Employee 的 isDeleted 属性.
+②. 注意: 实际上实体类也可以作为参数传入
+
+5). 注意: 默认情况下, 页面的 JS 代码仅在当前页面刷新时, 执行一次. 所以
+$(".delete").click(function(){
+	deleteTr(this);				
+	return false;
+});
+
+仅适用于当前页面的 delete 超链接. 在使用 Ajax 分页时, 还需要为新创建的 delete 的 a 节点添加 click 响应函数
+var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+$deleteANode.click(function(){
+	deleteTr(this);				
+	return false;
+});
+
+6). 若删除成功, 则页面上需要更新 Page 信息. 考虑代码的重用问题. 
+
+****************************************************************************
+具体步骤：
+11.1 body 中 “操作”栏下面，“删除”的代码改成如下(使用隐藏域的方式)：
+
+        开始是这样的：
+		<s:else>
+			<a href="emp-delete?id=${employeeId }">删除</a>
+		</s:else>
+		
+         修改后是这样的：
+
+		<s:else>
+			<a class="delete" href="emp-delete?id=${employeeId }">删除</a>
+			<input type="hidden" value="${loginName }"/>
+		</s:else>
+
+    在  $(function(){	})添加方法：
+<script type="text/javascript">
+	$(function(){	})
+</script>
+中添加删除方法如下：
+
+  		$(".delete").click(function(){
+			
+			var loginName = $(this).next(":hidden").val();
+			var flag = confirm("确定要删除" + loginName + "的信息吗?");
+			if(!flag){
+				return false;
+			} 
+		
+		});
+
+刷新页面，点删除初步确定是否可以有响应，页面是否可以弹出自己需要的提示窗口信息！！！
+
+11.2.1
+
+	//因为需要 Ajax 更新当前的页面，还需要携带一个参数: pageNo. 
+	在 list2.jsp的<body></body>首行加上一个隐藏域
+	<input type="hidden" id="pageNo" value="${page.pageNo }"/>
+
+11.2.2 在 turnPage函数的首行加入 //更新 #pageNo
+
+    	function turnPage(url, args){
+			$.post(url, args, function(data){
+			
+			//更新 #pageNo
+			$("#pageNo").val(data.pageNo);
+                                  
+                                    。。。。。。。。。。。。。。。
+                                    
+       	    },"json");
+		}
+		
+11.2.3  因为 11.1 中 有：  var loginName = $(this).next(":hidden").val() 处于如下代码中，需要一个隐藏域。
+  		$(".delete").click(function(){
+			
+			var loginName = $(this).next(":hidden").val();
+			var flag = confirm("确定要删除" + loginName + "的信息吗?");
+			if(!flag){
+				return false;
+			} 
+		
+		});
+		
+		因此在  function turnPage(url,args){}函数的删除操作中也需要加一个隐藏域，代码块如下：
+		
+		if(item.isDeleted == 1){
+				$td.append("&nbsp;&nbsp;删除")
+			}else{
+				$td.append("&nbsp;&nbsp;");
+				var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+				$deleteANode.click(function(){
+					deleteTr(this);				
+					return false;
+				});
+				$td.append($deleteANode);
+				$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+		}
+		
+11.2.4 建立一个删除函数： function deleteTr(aNode){}如下：
+
+    	//建立一个删除函数
+		function deleteTr(aNode){
+			var loginName = $(aNode).next(":hidden").val();
+			var flag = confirm("确定要删除" + loginName + "的信息吗?");
+			if(!flag){
+				return false;
+			}
+			
+			var url = aNode.href;
+			//还需要携带一个参数: pageNo. 因为需要 Ajax 更新当前的页面
+			//获取当前页的页码:
+			var pageNo = $("#pageNo").val();
+			
+			//准备 Ajax 请求:
+			var args = {"date":new Date(),"pageNo":pageNo}
+			$.post(url, args, function(data){
+				//如何来判断删除是否成功呢 ? 若成功则返回 page 对应的 JSON, 若失败, 则什么都没有返回
+				//表示你返回的结果里面有pageNo属性
+				if(data.pageNo){
+					alert("删除成功!");
+				}else{
+					alert("是 Manager! 不能被删除!");
+				}
+			});
+		}
+		
+11.2.5 点击删除操作时候，调用删除函数：
+
+		//点击删除时候，调用删除函数
+		$(".delete").click(function(){
+			deleteTr(this);				
+			return false;
+		});
+		
+		再把click里面的东西复制一份到function turnPage(url,args){}函数的删除操作中：
+		
+		if(item.isDeleted == 1){
+				$td.append("&nbsp;&nbsp;删除")
+			}else{
+				$td.append("&nbsp;&nbsp;");
+				var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+				$deleteANode.click(function(){
+					deleteTr(this);				
+					return false;
+				});
+				$td.append($deleteANode);
+				$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+		}
+		
+11.2.6 刷新页面 http://localhost:8080/EM/emp-list
+                     点击删除操作	测试，然后再跳转到别的页面再进行测试删除操作！！！
+ 
+ **************底层 代码*****************************************************************                    
+11.3.1 在 /EM02/src/com/atguigu/ems/daos/EmployeeDao.java
+中加入
+
+	public Employee get(Integer id){
+		return (Employee) getSession().get(Employee.class, id);
+	}
+
+11.3.2 在/EM02/src/com/atguigu/ems/services/EmployeeService.java	
+中加入：
+
+Page<Employee> getPage(int pageNo)上面的  @Transactional
+          改为： @Transactional(readOnly=true)
+
+同时添加如下代码：
+@Autowired 
+private DepartmentDao departmentDao;
+
+@Transactional
+	public int delete(Integer id){
+		//查询 id 对应的 Employee 是否为一个Manager 
+		//若是一个Manager 则返回 0;
+		Employee manager = new Employee();
+		//其实对于引用类型，值使用id，所以直接赋值即可
+		manager.setEmployeeId(id);
+		Department department = departmentDao.getByManager(manager);
+		if(department !=null){
+			return 0;
+		}
+		
+		//若不是一个Manager 则 执行删除，返回 1;
+		Employee employee = employeeDao.get(id);
+		//因为此时 Employee 是一个持久化对象，所以可以修改其属性，且能够完成更新操作
+		employee.setIsDeleted(1);
+		return 1;
+	}
+	
+11.3.3 在 /EM02/src/com/atguigu/ems/actions/EmployeeAction.java
+中添加：
+
+	//每一个Action 实际上都会有接收id 的任务，所以id作为成员变量。
+	private Integer id;
+	
+	public void setId(Integer id) {
+		this.id = id;
+	}
+	
+	public String delete(){
+		employeeService.delete(id);
+		return "";
+	}
+
+11.3.4 建立一个   /EM02/src/com/atguigu/ems/daos/DepartmentDao.java
+在里面添加代码：
+@Repository
+public class DepartmentDao {
+	
+	@Autowired
+	private SessionFactory sessionFactory;
+	
+	public Session getSession(){
+		return sessionFactory.getCurrentSession();
+	}
+	
+	public Department getByManager(Employee manager){
+		String hql = "FROM Department d "
+				     +"WHERE d.manager = :manager";
+		Query query = getSession().createQuery(hql).setParameter("manager", manager);
+		return (Department) query.uniqueResult();
+	}
+
+}
+
+11.3.5  在  /EM02/test/com/atguigu/ems/test/ApplicationContextTest.java中添加测试代码
+	@Test
+	public void testDelete(){
+		int result = employeeService.delete(13);
+		System.out.println(result);
+	}
+	
+对数据库表中，oa_department表的  manager_id 为 13，其在  oa_employee表中的 employee_id 为 13，把该员工的
+IS_DELETED属性 改为 0，表示没有被删除。
+然后运行测试，得到输出 为     0;
+
+再对 employee_id 为 12进行测试，它不是 一个mamager，它的IS_DELETED是 0;
+运行测试代码之后，得到 输出值为  1；
+
+******************底层，表现层对接************************************
+11.4 然后把 com.atguigu.ems.actions.EmployeeAction 中的 
+  	public String delete(){
+		employeeService.delete(id);
+		return "";
+	}
+	
+	修改为：
+	
+	public String delete(){
+		int result = employeeService.delete(id);
+		if(result == 0){
+			//不成功返回一个结果，现在先不管它，让它返回一个null吧
+			return null;
+		}else{
+			//成功就返回一个page
+			return list2();
+		}
+	}
+	
+	因为你要分页,上面的代码即返回的是 com.atguigu.ems.actions.EmployeeAction中 ：
+	public String list2(){
+		page = employeeService.getPage(pageNo);
+		return "list2";
+	}
+
+11.5 Run as 一下工程，然后谷歌浏览器下测试：http://localhost:8080/EM02/emp-list，同时 按键 F12
+             删除一个employee，然后刷新，可以看到，删除操作项变成黑色了，被删了。查看浏览器中的Previe ，成功删除了可以
+            返回一个page:
+            
+,…}
+content: [{birth: null, departmentName: "开发部", displayBirth: "", email: "a@163.com", employeeId: 105,…},…]
+hasNext: true
+hasPrev: true
+next: 16
+pageNo: 15
+pageSize: 5
+prev: 14
+totalElements: 74
+totalPages: 15
+    
+          删除首页的“子文”会弹出  “是manager，不能删除的信息”！！
+    	
+		

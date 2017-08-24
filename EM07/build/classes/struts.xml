@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE struts PUBLIC
+	"-//Apache Software Foundation//DTD Struts Configuration 2.3//EN"
+	"http://struts.apache.org/dtds/struts-2.3.dtd">
+
+<struts>
+
+    <constant name="struts.enable.DynamicMethodInvocation" value="false" />
+    <constant name="struts.devMode" value="true" />
+    <!-- 设置主题 -->
+	<constant name="struts.ui.theme" value="simple"></constant>
+	<!-- 设置国际化资源文件 -->	
+	<constant name="struts.custom.i18n.resources" value="i18n"></constant>	
+		
+    <package name="default" namespace="/" extends="json-default">
+        
+        <interceptors>
+			<interceptor name="fileCleaner" class="com.atguigu.ems.interceptors.FileCleanerInterceptor"></interceptor>
+			<interceptor-stack name="emsStack">
+				<interceptor-ref name="fileCleaner"></interceptor-ref>
+				<interceptor-ref name="paramsPrepareParamsStack">
+					<param name="chain.copyFieldErrors">true</param>
+					<param name="prepare.alwaysInvokePrepare">false</param>
+				</interceptor-ref>
+			</interceptor-stack>
+		</interceptors>
+		
+		<default-interceptor-ref name="emsStack"></default-interceptor-ref>
+		
+		<action name="login-success">
+			<result name="success">/WEB-INF/pages/success.jsp</result>
+		</action>
+		
+		
+		<action name="role-*"
+		        class="roleAction"
+		        method="{1}">
+		        <result name="input">/WEB-INF/pages/roles/input.jsp</result>
+		</action>
+		
+		
+		<action name="emp-upload"
+			class="employeeAction"
+			method="upload">
+			<!-- 设置仅针对于当前 Action 的拦截器参数 -->
+			<interceptor-ref name="emsStack">
+				<param name="fileUpload.allowedExtensions">xls</param>
+			</interceptor-ref>
+			
+			<result name="input">/WEB-INF/pages/emps/upload.jsp</result>	
+		</action>
+		
+		
+		<!-- 直接导航到 /WEB-INF/pages/emps/upload.jsp页面 -->
+		<action name="emp_upload">
+		      <result>/WEB-INF/pages/emps/upload.jsp</result>
+		</action>
+		
+		
+		<action name="emp-save"
+			class="employeeAction"
+			method="save">
+ 			<result name="input" type="chain">
+				<param name="actionName">emp-input</param>
+			</result>
+			<!-- <result name="input">/WEB-INF/pages/emps/input.jsp</result>	 -->
+		</action>
+		
+		
+		<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+			<!-- 使用异常映射来解决 Action 中可能发出的异常 -->
+			<exception-mapping result="input" 
+				exception="org.springframework.security.authentication.BadCredentialsException"></exception-mapping>
+			<exception-mapping result="input" 
+				exception="org.springframework.security.authentication.DisabledException"></exception-mapping>
+			
+			
+			<exception-mapping result="input" 
+				exception="com.atguigu.ems.exceptions.EmployeeDisabledException"></exception-mapping>
+			<exception-mapping result="input" 
+				exception="com.atguigu.ems.exceptions.EmployeeIsDeletedException"></exception-mapping>
+			<exception-mapping result="input" 
+				exception="com.atguigu.ems.exceptions.LoginNameNotFoundException"></exception-mapping>
+			<exception-mapping result="input" 
+				exception="com.atguigu.ems.exceptions.PasswordNotMatchException"></exception-mapping>
+			
+			<result name="list3">/WEB-INF/pages/emps/list3.jsp</result>
+			
+			<result name="criteriaInput">/WEB-INF/pages/emps/criteria-input.jsp</result>
+			
+			<result type="json" name="navigation-success">
+				<param name="root">navigations</param>
+			</result>
+			
+			
+			<result type="stream" name="download-success"></result>
+			<result name="emp-input">/WEB-INF/pages/emps/input.jsp</result>
+			
+			<result name="list2" type="json">
+				<param name="root">page</param>
+				<param name="excludeProperties">content.*\.editor,content.*\.department,content.*\.roles</param>
+			</result>
+			
+			<result name="list">/WEB-INF/pages/emps/list2.jsp</result>
+			<!--  
+			<result name="list">/WEB-INF/pages/emps/list.jsp</result>
+			-->
+			<result name="success">/WEB-INF/pages/success.jsp</result>
+			<result name="input">/index.jsp</result>	
+		</action>
+		
+		<action name="test-*"
+		        class="actionTest"
+		        method="{1}">
+		        <result type="stream" name="download-success"></result>
+		</action>
+        
+    </package>
+
+</struts>

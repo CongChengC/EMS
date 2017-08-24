@@ -1,0 +1,31 @@
+25.错误页面的提示
+例如登录   AAAAAA   123456
+浏览器输入：http://localhost:8080/EM06/role-list
+发现：HTTP Status 403 - Access is denied
+
+处理步骤：
+1)在 /EM06/WebContent/commons中放置好  403 404 500.jsp页面
+
+2)在 web.xml 中配置错误页面：
+
+ <error-page>
+    <error-code>403</error-code>
+    <location>/commons/403.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>404</error-code>
+    <location>/commons/404.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>500</error-code>
+    <location>/commons/500.jsp</location>
+  </error-page>
+  <error-page>
+    <exception-type>java.lang.Exception</exception-type>
+    <location>/commons/500.jsp</location>
+  </error-page>
+
+3)测试，重新启动服务器：
+例如登录   AAAAAA   123456
+浏览器输入：http://localhost:8080/EM06/role-list
+可以跳转到页面中，有提示：你没有访问该页面的权限

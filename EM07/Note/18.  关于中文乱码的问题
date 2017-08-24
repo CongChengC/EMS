@@ -1,0 +1,39 @@
+18. 关于中文乱码的问题
+1). 添加字符编码过滤器. 该过滤器要放在所有过滤器的最前面
+2). 修改 tomcat 的 server.xml 文件, 在 Connector 节点的后面添加如下属性:
+useBodyEncodingForURI="true" 
+
+**************具体操作步骤****************************
+
+1) 打开 D:\Program Files\apache-tomcat-6.0.43-windows-x86\apache-tomcat-6.0.43\conf
+            下面的  server.xml找到
+         
+    <Connector port="8080" protocol="HTTP/1.1" 
+               connectionTimeout="20000" 
+               redirectPort="8443" />
+             修改为： 
+    <Connector port="8080" protocol="HTTP/1.1" 
+               connectionTimeout="20000" 
+               redirectPort="8443" 
+			   useBodyEncodingForURI="true" />
+
+2)在 web.xml中添加字符编码过滤器. 该过滤器要放在所有过滤器的最前面
+
+	<filter>
+	     <filter-name>CharacterEncodingFilter</filter-name>
+	     <filter-class>org.springframework.web.filter.CharacterEncodingFilter</filter-class>
+	     <!-- 使用初始化参数设置字符编码方式 -->
+	     <init-param>
+	          <param-name>encoding</param-name>
+	          <param-value>UTF-8</param-value>
+	     </init-param>
+	</filter>
+	
+	<filter-mapping>
+	     <filter-name>CharacterEncodingFilter</filter-name>
+	     <url-pattern>/*</url-pattern>
+	</filter-mapping>	
+	
+3)在http://localhost:8080/EM04/emp-input页面中 添加员工，并在姓名一栏输入
+中文进行测试，提交表单后，数据库中有数据了！！！	
+	   

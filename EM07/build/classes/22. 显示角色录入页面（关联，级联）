@@ -1,0 +1,372 @@
+22. 显示角色录入页面
+1). Authority 实体类中中有两个属性, Authority 和 Authority 之间有双向 n-1 的关联关系.
+/**
+ * 当前权限的父权限
+ */
+private Authority parentAuthority; // 用户管理
+/**
+ * 当前权限的子权限
+ */
+private Set<Authority> subAuthorities = new HashSet<Authority>();
+
+2). 选择父权限, 显示对应的子权限:
+①. 不能使用 s:checkboxlist 标签. 因为显示样式有问题. 但使用原生的 checkbox 时, 表单回显会有问题. 
+②. 如何使子权限和选择的父权限关联呢 ? 使子权限的 p 的 class 中包含父权限的 id. 
+<p style="display:none" class="authority-${parentAuthority.id }">   
+
+3). 依赖权限的级联选择问题:
+①. 实际上, Authority 有一个字段: relatedAuthorites. 用来存储关联的权限. 
+②. 页面上需要有合适的位置来保存当前权限关联的权限. 
+
+4). 修改 checkboxlist.ftl 文件, 使 checkbox 的显示样式可以满足实际的需求:
+①. 为了不影响其他 JSP 页面使用 checkboxlist 标签, 所以新建包: ems.template.simple
+②. 把 template.simple 下的所有的 ftl 文件都 copy 到 ems.template.simple 下.
+③. 仅修改 checkboxlist.ftl
+④. s:checkboxlist 标签使用时需要注意如下的两个属性:
+	> templateDir: 指定模板问文件的位置
+	> listCssClass: 具体类似于 listKey 或 listValue
+**************************************************************
+****************具体操作*****************************************
+1) 在 com.atguigu.ems.daos中 新建  AuthorityDao
+
+@Repository
+public class AuthorityDao {
+	
+	@Autowired
+	private SessionFactory sessionFactory;
+	
+	public Session getSession(){
+		return sessionFactory.getCurrentSession();
+	}
+	
+	public Criteria getCriteria(){
+		return getSession().createCriteria(Authority.class);
+	}
+	
+	public List<Authority> getByNotNull(String propertyName){
+		Criterion criterion = Restrictions.isNotNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+	
+	public List<Authority> getByNull(String propertyName){
+		Criterion criterion = Restrictions.isNull(propertyName);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		return criteria.setCacheable(true).list();
+	}
+
+}
+
+
+2)com.atguigu.ems.services中建立 
+
+ @Service
+public class AuthorityService {
+    
+	@Autowired
+	private AuthorityDao authorityDao;
+	
+	
+	@Transactional(readOnly=true)
+	public List<Authority> getByIsNotNull(String propertyName){
+		return authorityDao.getByNotNull(propertyName);
+	}
+	
+	@Transactional(readOnly=true)
+	public List<Authority> getByIsNull(String propertyName){
+		return authorityDao.getByNull(propertyName);
+	}
+}
+
+3)com.atguigu.ems.actions中建立
+
+@Scope("prototype")
+@Controller
+public class RoleAction extends ActionSupport implements RequestAware {
+      
+	@Autowired
+	private AuthorityService authorityService;
+	
+	public String input(){
+		//如果 parentAuthority是null的话就是父权限；如果parentAuthority不是null的话就是子权限
+		this.request.put("parentAuthorities", authorityService.getByIsNull("parentAuthority"));
+		this.request.put("subAuthorities", authorityService.getByIsNotNull("parentAuthority"));
+	    return "input";
+	}
+	
+	private Map<String, Object> request;
+
+	@Override
+	public void setRequest(Map<String, Object> request) {
+        this.request = request;
+	}
+	
+}
+
+
+4)在 struts.xml中加入：
+
+		<action name="role-*"
+		        class="roleAction"
+		        method="{1}">
+		        <result name="input">/WEB-INF/pages/roles/input.jsp</result>
+		</action>
+		
+5) 在 /EM06/WebContent/WEB-INF/pages/roles/input.jsp中加入 input.jsp页面
+5.1 页面中引入：<%@ include file="/commons/common.jsp" %>
+  
+5.2   在input.jsp 的<title></title>一栏下面引入：
+  
+<link rel="stylesheet" type="text/css" href="${ctp }/css/content.css">
+<link rel="stylesheet" type="text/css" href="${ctp }/css/input.css">
+<script type="text/javascript" src="${ctp }/script/jquery-1.4.2.min.js"></script>
+<script type="text/javascript" src="${ctp }/script/jquery.validate.js"></script>
+<script type="text/javascript" src="${ctp }/script/messages_cn.js" ></script>
+<script type="text/javascript" src="${ctp }/script/jquery.blockUI.js" ></script>
+
+5.3 在input.jsp 的 body 中粘贴：
+
+<br>
+<s:form name="employeeForm" id="employeeForm" action="/role-save" method="POST" cssClass="employeeForm">
+	<fieldset>
+		<p>
+			<label for="name">角色名(必填*)</label>
+			<s:textfield name="roleName" cssClass="required"></s:textfield>
+		</p>
+		
+		<p>
+			<label for="authority">授予权限(必选)</label>
+		</p>
+		
+		<p>
+			<label>权限名称(必填)</label>
+			<!-- 父权限 -->
+			<s:select list="#request.parentAuthorities" 
+				listKey="id" listValue="displayName"
+				headerKey="" headerValue="请选择..."
+				name="parentAuthroities"></s:select>
+		</p>
+		
+			<!-- 子权限以隐藏的 checkbox 的形式显示出来 -->
+			<s:iterator value="#request.subAuthorities">
+				<p style="display:none" class="authority-${parentAuthority.id }">    
+					<label>&nbsp;</label>    
+					<input type="checkbox" name="authorities2" value="${id }"
+						style="border:none" style="border:none"
+						class="${relatedAuthorites }" />
+					${displayName }
+				</p>
+				
+			</s:iterator>
+		
+		<p>
+			<input class="submit" type="submit" value="Submit"/>
+		</p>
+		
+	</fieldset>
+</s:form>	
+
+6)在input.jsp 的  head 中粘贴：
+
+<script type="text/javascript">
+	$(function(){
+		//当选取父权限时, 显示对应的子权限
+		$("select[name='parentAuthroities']").change(function(){
+			//以authority-开头的就隐藏
+			$("p[class^='authority-']").hide();
+			
+			var val = this.value;
+			$(".authority-" + val).show();
+		});
+		
+		$(":checkbox").click(function(){
+			var flag = $(this).is(":checked");
+			
+			//若被选中, 则关联的也被选中. 
+			if(flag){
+				var relatedAuthorites = $(this).attr("class"); //,3,4,5,
+				var ras = relatedAuthorites.split(",");
+				for(var i = 0; i < ras.length; i++){
+					var ra = ras[i];
+					ra = $.trim(ra);
+					
+					if(ra != ""){
+						//使 value 值等于关联值的那些 checkbox 也被选中
+						$(":checkbox[value='" + ra + "']").attr("checked",true);
+					}
+				}
+			}else{
+				//若没选中
+				//使 class 值中包含当前 value 值的 checkbox 取消选择.
+				//若当前的 val 值为 2, 则 class 属性值包含 2 的或许有如下情况:
+				//class=',2,3,4', class='1,12,31' 类似于 12 的不该被取消. 所以光包含 2 不行. 
+				//应该不包含歧义的部分: class 包含 ,val,  就不会有这样的歧义了. 
+				//变成了包含 ,2,
+				var val = this.value; 
+				//使 class 值中包含当前 value 值的 checkbox 取消选择.
+				$(":checkbox[class*='," + val + ",']").attr("checked",false);
+			}
+		});
+	});
+</script>
+
+7)run as  工程，在浏览器 中输入 ：http://localhost:8080/EM06/role-input
+进行测试，
+点"请选择"会收起下拉选项；
+点员工管理，会显示下拉选项，当选择其中的删除选项，会连着查询选项也被选中，此时取消删除选项，查询选项还在，单独点查询
+不会连着别的选项，选修改选项会连着查询选项，取消修改选项，查询选项还在，单独点查询选项，不会连着别的选项
+点角色管理，和员工管理有相似的特点。
+
+我选一个父权限，对应的子权限显示；我怎么知道那个是我对应的子权限啊？？？
+当前权限父权限的id， class="authority-${parentAuthority.id }  
+父权限一显示，我就让当前父权限的那个key显示就可以了。
+
+为什么没有出现懒加载异常呢？***********************************************
+因为：/EM06/src/com/atguigu/ems/entities/Authority.hbm.xml中有：
+<!-- 权限是固定的一组权限, 所以可以使用 hibernate 的二级缓存, 策略为 read-only -->
+<cache usage="read-only"/>
+		
+<many-to-one name="parentAuthority" class="com.atguigu.ems.entities.Authority"
+			column="PARENT_AUTHORITY_ID" lazy="false"></many-to-one>
+权限不能进行添加删除和修改，值能看。
+
+AuthorityDao中有
+return criteria.setCacheable(true).list();
+*****************************************************************
+
+8)回显：
+com.atguigu.ems.actions.RoleAction 方法进一步修改如下：
+
+
+@Scope("prototype")
+@Controller
+public class RoleAction extends ActionSupport 
+             implements RequestAware, ModelDriven<Role>,Preparable {
+      
+	@Autowired
+	private AuthorityService authorityService;
+	
+	public void prepareSave(){
+		model = new Role();
+	}
+	
+	public String save(){
+		System.out.println("save:" + model);
+		return input();
+	}
+	
+	public String input(){
+		//如果 parentAuthority是null的话就是父权限；如果parentAuthority不是null的话就是子权限
+		this.request.put("parentAuthorities", authorityService.getByIsNull("parentAuthority"));
+		this.request.put("subAuthorities", authorityService.getByIsNotNull("parentAuthority"));
+	    return "input";
+	}
+	
+	private Map<String, Object> request;
+
+	@Override
+	public void setRequest(Map<String, Object> request) {
+        this.request = request;
+	}
+
+	@Override
+	public void prepare() throws Exception {}
+
+	private Role model;
+	
+	@Override
+	public Role getModel() {
+		return model;
+	}
+	
+}
+
+回显测试：当你在 http://localhost:8080/EM06/role-input页面中输入
+    角色名，然后在员工管理，角色管理中勾选，提交
+  到达：http://localhost:8080/EM06/role-save页面，你在点开角色管理和员工管理，没有回显！！！
+  
+ 9)在body 首行加一个  <s:debug></s:debug>，重新进行上述操作，发现栈顶有 	authorities2	[12, 3, 4, 11]
+   值是回显不上！！
+  
+10)模板修改：struts2-core-2.3.15.3.jar---》template.simple---》checkboxlist.ftl
+在ems.template.simple包中建一个 checkboxlist.ftl，把源码包中
+内容粘贴进去！然后再修改
+因为前面 /EM06/WebContent/WEB-INF/pages/emps/input.jsp中用过checkboxlist，为避免受到影响，
+没有直接放在template.simple包中
+
+在自己建立的 checkboxlist.ftl文件中把
+<p style="display:none" class="authority-${parentAuthority.id }"> 加到
+下面这行前面
+<input type="checkbox" name="${parameters.name?html}" value="${itemKeyStr?html}"
+
+找到 <label for="${parameters.name?html}-${itemCount}" class="checkboxLabel">${itemValue?html}</label>改成
+${itemValue?html}
+然后在后面一行加 p的结束
+</p>
+在这行的前面加上
+
+11)/EM06/WebContent/WEB-INF/pages/roles/input.jsp中注销
+
+<!-- 子权限以隐藏的 checkbox 的形式显示出来 -->
+<%-- 			<s:iterator value="#request.subAuthorities">
+				<p style="display:none" class="authority-${parentAuthority.id }">    
+					<label>&nbsp;</label>    
+					<input type="checkbox" name="authorities2" value="${id }"
+						style="border:none" style="border:none"
+						class="${relatedAuthorites }" />
+					${displayName }
+				</p>
+			</s:iterator>
+			
+			
+添加：
+
+			<s:checkboxlist list="#request.subAuthorities"
+    			listKey="id" listValue="displayName"
+    			name="authorities2" templateDir="ems/template"
+    			cssStyle="border:none" listCssClass="relatedAuthorites"></s:checkboxlist>
+    			
+ 12)启动工程，浏览器中 输入 http://localhost:8080/EM06/role-input进行测试，发现
+ Error reading included file ems/template/simple/css.ftl
+ 这是少css.ftl 文件，我们去 struts2-core-2.3.15.3.jar---》template.simple找到这个文件
+ 粘贴内容到自己建立的css.ftl到 ems.template.simple包中文件。
+ 
+ 刷新后还是缺ftl文件！！！
+ 
+ 到 OpenSource\OpenSource\struts-2.3.15.3-all\struts-2.3.15.3\required
+ 找到 struts2-core-2.3.15.3.jar右键 用WinRAR 打开，选则 simple解压
+ 找到 struts2-core-2.3.15.3\template\simple，就可以看到全部的所需文件
+ 
+ 粘贴到 ems.template.simple包中。注意不要重复
+ 
+ 刷新页面，没有报缺文件的错误了！！！！
+ 
+ 13)下拉的选项位置不对，在左边，
+ 原来	<p style="display:none" class="authority-${parentAuthority.id }">  下行有 
+ <label>&nbsp;</label>
+ 
+ 我们把  <label>&nbsp;</label>粘贴到 /EM06/src/ems/template/simple/checkboxlist.ftl中的 
+ <p style="display:none" class="authority-${parentAuthority.id }">下行
+ 
+ 刷新页面，位置ok了;测试提交后回显功能也ok
+ 
+ 
+ 14)com.atguigu.ems.actions.RoleAction中抽取 BaseAction的时候我们把
+ 	@Autowired
+	private AuthorityService authorityService;
+	注销了，并把 
+		public String input(){
+		//如果 parentAuthority是null的话就是父权限；如果parentAuthority不是null的话就是子权限
+		this.request.put("parentAuthorities", authorityService.getByIsNull("parentAuthority"));
+		this.request.put("subAuthorities", authorityService.getByIsNotNull("parentAuthority"));
+	    return "input";
+	}
+	
+	中的 authorityService改为 service 发现 添加角色的时候，会父权限相关的报错，于是我又改回来了，打开了注销代码，并用了 authorityService
+	点取。
+	
+15)但我遇到件奇怪事情，就是员工查询后，我又得员工可以修改，有的员工修改后就报错，这让我很郁闷，这留给以后再处理吧

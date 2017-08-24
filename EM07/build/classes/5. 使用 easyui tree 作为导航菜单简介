@@ -1,0 +1,33 @@
+5. 使用 easyui tree 作为导航菜单.
+1). 运行 easyui 的 demo.
+①. 解压 jquery-easyui-1.3.5.zip  会得到一个 jquery-easyui-1.3.5  文件夹
+②. 把解压后的jquery-easyui-1.3.5文件夹, 复制到 tomcat 的 webapps 目录下. 
+我的是把给文件夹复制到了  
+D:\Program Files\apache-tomcat-6.0.43-windows-x86\apache-tomcat-6.0.43\webapps
+下面
+③. 启动 tomcat
+在 D:\Program Files\apache-tomcat-6.0.43-windows-x86\apache-tomcat-6.0.43\bin
+下面点击startup.bat
+④. 通过以下 url 来访问: http://localhost:8080/jquery-easyui-1.3.5/
+⑤. 修改 tomcat conf 目录下的 web.xml 文件中的如下配置, 把 listings 的 param-value 值修改为 true
+<servlet>
+    <servlet-name>default</servlet-name>
+    <servlet-class>org.apache.catalina.servlets.DefaultServlet</servlet-class>
+    <init-param>
+        <param-name>debug</param-name>
+        <param-value>0</param-value>
+    </init-param>
+    <init-param>
+        <param-name>listings</param-name>
+        <param-value>false</param-value>
+    </init-param>
+    <load-on-startup>1</load-on-startup>
+</servlet>
+⑥. 点击 demo 超链接就会看到所有的例子.
+浏览器中输入 ： http://localhost:8080/jquery-easyui-1.3.5/然后点击  demo/
+
+2). 学习使用 easyui tree. 
+①. 键入如下链接: http://localhost:8080/jquery-easyui-1.3.5/demo/tree/actions.html
+②. 可以参看 easyui 的帮助文档. EasyUI+v1.3.4官方API中文版.exe
+里面有个 （表格和树）选择tree然后进行参考
+3). 目标: 能够显示 tree.jpg 的效果. 

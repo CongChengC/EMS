@@ -1,0 +1,591 @@
+28. 带查询条件的分页:
+1). 使用 jQuery 的 thickbox 插件来显示查询条件的表单页面. 设置 href 和 class 即可
+
+<a id="criteria" href="${ctp}/emp-criteriaInput?height=300&width=320&time=new Date()"  class="thickbox"> 
+	增加(显示当前)查询条件	   		
+</a> 
+
+2). 表单回显: 使用值栈和 Struts2 的表单标签. 
+①. 原理: 在到达目标表单时, 值栈中有一个 EmployeeCrieriaFormBean 对象, 且其中存放在当时提交表单时的变量值.
+②. 具体步骤:
+	> 在 prepareCriteriaInput 方法中创建 EmployeeCrieriaFormBean bean 的对象
+	> 把该 bean 的对象压入到值栈中. 
+	> 提交表单时, 目标 Action 方法实际上可以获取到表单的请求参数. 在 Action 方法中获取这些请求参数, 再把其反序列化为一个
+	查询字符串, 传到页面上. 页面点击超链接的时候, 把参数再带回去.
+	
+·3). 如何实现通用的带查询条件的分页 ? 
+①. 查询条件的表单必须传递更多的查询信息: 而不能是简单的 name 和 value. 例如 age:12 若是这样则没有办法完成比较. 
+//属性名                   属性值                     比较的方式         目标属性的类型
+propertyName, propertyVal, matchType, propertyType 	
+②. 创建一个类 PropertyFilter 来封装上面的信息
+③. 实际上请求参数有特殊的格式: 
+filter_匹配方式的枚举字符串目标属性类型的枚举字符串_属性名
+filter_EQI_loginName
+
+****************具体步骤*****************************************
+1)复制/EM07/WebContent/WEB-INF/pages/emps/list2.jsp一份，命名为list3.jsp
+我们注意到它的body中有如下：
+		<a id="criteria" href="${ctp}/emp-criteriaInput?height=300&width=320&time=new Date()"  class="thickbox"> 
+	   		增加(显示当前)查询条件	   		
+		</a> 
+这是使用 jQuery 的 thickbox 插件来显示查询条件的表单页面. 设置 href 和 class 即可
+
+接着我们建立一个/EM07/WebContent/WEB-INF/pages/emps/criteria-input.jsp查询条件的页面
+在body里面写：
+
+   <h4>查询条件的表单页面</h4>
+ 
+2)在 EmployeeAction中建立如下方法：
+	
+	public String criteriaInput(){
+		return "criteriaInput";
+	}
+	
+3) 在struts.xml 中配置如下：
+配置在
+		<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+		
+		<result name="criteriaInput">/WEB-INF/pages/emps/criteria-input.jsp</result>
+		
+		
+		</action>
+中
+
+4)登录 AABBCC 123456 然后 点击员工查询；然后点击“增加(显示当前)查询条件”，在弹出的页面上可以显示：查询条件的表单页面
+如此，则打通路径！！！！
+
+
+5) 在criteria-input.jsp中添加：
+<%@ include file="/commons/common.jsp" %>
+
+然后在 head中添加：
+<style type="text/css">
+#employeeForm { width: 300px; margin-left: 25px }
+</style>
+
+然后在body中添加：
+
+    <s:debug></s:debug>
+	
+	<s:form action="/emp-list3" id="employeeForm" cssClass="employeeForm">
+		<br>
+		查询条件
+		<table border="0" cellpadding="3" cellspacing="3" style="margin:0 auto;" >
+		  <tr>
+		    <td><label>登录名*</label>: </td>
+		    <td>
+		    	<s:textfield name="filter_LIKES_loginName"></s:textfield>
+		    </td>
+		  </tr>
+		  <tr>
+		    <td><label>姓名</label>: </td>
+		    <td>
+		    	<s:textfield name="filter_LIKES_employeeName"></s:textfield>
+		    </td>
+		  </tr>
+		  <tr>
+		    <td><label>性别</label>: </td>
+		    <td>
+		    	<s:select list="#{'1':'男','0':'女' }" name="filter_EQS_gender"
+		    		headerKey="" headerValue="不限"></s:select>
+		    </td>
+		  </tr>
+		  <tr>
+		    <td><label>登录许可</label>: </td>
+		    <td>
+		    	<s:select list="#{'1':'允许','0':'禁止' }" name="filter_EQI_enabled"
+		    		headerKey="" headerValue="不限"></s:select>
+		    </td>
+		  </tr> 
+		  <tr>
+		    <td><label>部门</label>: </td>
+		    <td>
+		    	<s:select list="#request.departments"
+		    		listKey="departmentId" listValue="departmentName"
+		    		headerKey="" headerValue="请选择" name="filter_EQI_department.departmentId"></s:select>
+		    </td>
+		  </tr>
+		  <tr>
+		    <td><label>Email</label>: </td>
+		    <td>
+		    	<s:textfield name="filter_LIKES_email"></s:textfield>
+		    </td>
+		  </tr>
+		  <tr align="right">
+		    <td colspan="2">
+		    	<input class="submit" type="submit" value="提交"/>
+		    </td>
+		  </tr>
+		</table>
+	</s:form>
+
+6)然后把 com.atguigu.ems.actions.EmployeeAction中的 
+	public String criteriaInput(){
+		return "criteriaInput";
+	}
+	
+	修改如下：
+
+	public String criteriaInput(){
+		request.put("roles", roleService.getAll());
+		request.put("departments", departmentService.getAll());
+		
+		return "criteriaInput";
+	}
+
+	
+7) 重新启动服务器，然后登录 AABBCC 123456 然后点击员工查询，然后点击“增加(显示当前)查询条件”
+查询条件表单可以正常显示出来。
+
+8)我们把 criteria-input.jsp中的 
+  <s:form action="/emp-list3" id="employeeForm" cssClass="employeeForm">
+      修改为 
+  <s:form action="/emp-list" id="employeeForm" cssClass="employeeForm">
+  
+ 这样有方法与 emp-list对应，不会报错，于是我们 在弹出的查询框中输入 查询条件，然后提交。然后再点开“增加(显示当前)查询条件”按钮
+发现不回显！！！
+
+9)表单回显: 使用值栈和 Struts2 的表单标签. 
+①. 原理: 在到达目标表单时, 值栈中有一个 EmployeeCrieriaFormBean 对象, 且其中存放在当时提交表单时的变量值.
+②. 具体步骤:
+	> 在 prepareCriteriaInput 方法中创建 EmployeeCrieriaFormBean bean 的对象
+	> 把该 bean 的对象压入到值栈中. 
+	> 提交表单时, 目标 Action 方法实际上可以获取到表单的请求参数. 在 Action 方法中获取这些请求参数, 再把其反序列化为一个
+	查询字符串, 传到页面上. 页面点击超链接的时候, 把参数再带回去.
+
+操作详细步骤：
+9.1 建立 com.atguigu.ems.util.EmployeeCrieriaFormBean
+
+public class EmployeeCrieriaFormBean {
+
+	private String filter_LIKES_loginName;
+	private String filter_LIKES_employeeName;
+	private String filter_EQS_gender;
+
+	private String filter_EQI_enabled;
+	private String filter_LIKES_email;
+	private Department filter_EQI_department;
+
+	public String getFilter_LIKES_loginName() {
+		return filter_LIKES_loginName;
+	}
+
+	public void setFilter_LIKES_loginName(String filter_LIKES_loginName) {
+		this.filter_LIKES_loginName = filter_LIKES_loginName;
+	}
+
+	public String getFilter_LIKES_employeeName() {
+		return filter_LIKES_employeeName;
+	}
+
+	public void setFilter_LIKES_employeeName(String filter_LIKES_employeeName) {
+		this.filter_LIKES_employeeName = filter_LIKES_employeeName;
+	}
+
+	public String getFilter_EQS_gender() {
+		return filter_EQS_gender;
+	}
+
+	public void setFilter_EQS_gender(String filter_EQS_gender) {
+		this.filter_EQS_gender = filter_EQS_gender;
+	}
+
+	public String getFilter_EQI_enabled() {
+		return filter_EQI_enabled;
+	}
+
+	public void setFilter_EQI_enabled(String filter_EQI_enabled) {
+		this.filter_EQI_enabled = filter_EQI_enabled;
+	}
+
+	public String getFilter_LIKES_email() {
+		return filter_LIKES_email;
+	}
+
+	public void setFilter_LIKES_email(String filter_LIKES_email) {
+		this.filter_LIKES_email = filter_LIKES_email;
+	}
+
+	public Department getFilter_EQI_department() {
+		return filter_EQI_department;
+	}
+
+	public void setFilter_EQI_department(Department filter_EQI_department) {
+		this.filter_EQI_department = filter_EQI_department;
+	}
+
+	@Override
+	public String toString() {
+		return "EmployeeCrieriaFormBean [filter_LIKES_loginName="
+				+ filter_LIKES_loginName + ", filter_LIKES_employeeName="
+				+ filter_LIKES_employeeName + ", filter_EQS_gender="
+				+ filter_EQS_gender + ", filter_EQI_enabled="
+				+ filter_EQI_enabled + ", filter_LIKES_email="
+				+ filter_LIKES_email + ", filter_EQI_department="
+				+ filter_EQI_department + "]";
+	}
+	
+}
+	
+9.2 com.atguigu.ems.actions.EmployeeAction中添加：
+
+    public void prepareCriteriaInput(){
+		EmployeeCrieriaFormBean bean = new EmployeeCrieriaFormBean();
+		ActionContext.getContext().getValueStack().push(bean);
+	}
+	
+9.3 把 criteria-input.jsp中的 
+  <s:form action="/emp-list" id="employeeForm" cssClass="employeeForm">
+    改回所需要的 
+  <s:form action="/emp-list3" id="employeeForm" cssClass="employeeForm">
+
+9.4 把EmployeeAction中的
+	public String list(){
+		page = getEmployeeService().getPage(pageNo);
+		return "list";
+	}
+         
+          复制一份，再在 EmployeeAction中建立一份：
+    public String list3(){
+		page = getEmployeeService().getPage(pageNo);
+		return "list3";
+	}
+	
+	再对list3()方法进行修改如下：
+	
+	public String list3(){
+		//获取查询条件对应的请求参数: 他们都是以 filter_ 开头的.
+		//Spring 的 WebUtils 的 getParametersStartingWith 方法可以获取以指定前缀开头的请求参数
+		//结果的 key 为去了前缀的请求参数的参数名, value 为参数值，你可以打印params看是什么样子
+		HttpServletRequest req = ServletActionContext.getRequest();
+		Map<String, Object> params = WebUtils.getParametersStartingWith(req, "filter_");
+		
+		//把请求参数再反序列化为一个查询字符串,你可以打印queryString看是什么样子
+		String queryString = encodeParamsToQueryString(params);
+		//把查询字符串再传回到页面上
+		request.put("queryString", queryString);
+		//调用 Service 方法完成分页操作
+		page = getEmployeeService().getPage(pageNo);
+		return "list3";
+	}
+	
+9.5 可是上面你没有 encodeParamsToQueryString方法啊！！！我们在 EmployeeAction中建立一个该方法！！
+
+	//请求参数再反序列化为一个查询字符串的方法
+	private String encodeParamsToQueryString(Map<String, Object> params) {
+		StringBuilder result = new StringBuilder();
+		
+		for(Map.Entry<String, Object> param: params.entrySet()){
+			String key = param.getKey();
+			Object val = param.getValue();
+			
+			if("".equals(val)){
+				continue;
+			}
+			
+			result.append("filter_").append(key).append("=").append(val).append("&");
+		}
+		
+		if(result.length() > 0){
+			result.replace(result.length() - 1, result.length(), "");
+		}
+		return result.toString();
+	}
+
+9.6 在struts.xml 的：
+		<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+		</action>
+中添加如下代码：
+
+<result name="list3">/WEB-INF/pages/emps/list3.jsp</result>
+
+9.7 在criteria-input.jsp的body 第一行 加 <s:debug></s:debug>
+进程查询测试：我们 在弹出的查询框中输入 查询条件，然后提交。然后再点开“增加(显示当前)查询条件”按钮
+然后点开debug！！！值栈中值为null。
+但是我在 表单中输入查询条件，然后提交，再在
+ com.atguigu.ems.actions.EmployeeAction.list3()
+ 中用两个打印：
+ System.out.println(params);
+ System.out.println(queryString);
+ 
+ 输出：
+{EQI_department.departmentId=2, EQI_enabled=1, EQS_gender=1, LIKES_email=ww@163.com, LIKES_employeeName=qqq, LIKES_loginName=qqqqqqqq}
+filter_EQI_department.departmentId=2&filter_EQI_enabled=1&filter_EQS_gender=1&filter_LIKES_email=ww@163.com&filter_LIKES_employeeName=qqq&filter_LIKES_loginName=qqqqqqqq
+ 
+9.8 因为做好了菜，没有服务员把它带到大厅来，所以出现这样问题了：
+我们应该在/EM07/WebContent/WEB-INF/pages/emps/list3.jsp把：
+
+<a id="criteria" href="${ctp}/emp-criteriaInput?height=300&width=320&time=new Date()"  class="thickbox"> 
+	增加(显示当前)查询条件	   		
+</a> 
+		
+修改如下，即把com.atguigu.ems.actions.EmployeeAction.list3()中的  request.put("queryString", queryString);
+queryString带过来：
+<a id="criteria" href="${ctp}/emp-criteriaInput?height=300&width=320&time=new Date()&${queryString}"  class="thickbox"> 
+	   		增加(显示当前)查询条件	   		
+		</a> 
+
+继续登录 AABBCC  123456 ，输入信息，然后提交。然后再点开“增加(显示当前)查询条件”按钮
+可以看到，回显OK！！
+
+
+********************************************************************************************************************
+***********实现通用的带查询条件的分页*********************************************************************************************
+1) com.atguigu.ems.actions.EmployeeAction.list3()中把 
+page = getEmployeeService().getPage(pageNo);
+修改为：
+page = getEmployeeService().getPage(pageNo, params);
+
+2)在 BaseService 里面建立：
+
+	@Transactional(readOnly=true)
+	public Page<T> getPage(int pageNo, Map<String, Object> params) {
+		//1. 把 params 转为 PropertyFilter 的集合
+		List<PropertyFilter> filters = PropertyFilter.parseParamsToPropertyFilters(params);
+		
+		//2. 调用 Dao 方法得到 Page 对象
+		Page<T> page = dao.getPage(pageNo, filters);
+		initializePageContent(page.getContent());
+		
+		//3. 返回 Page
+		return page;
+	}
+
+3) ①. 查询条件的表单必须传递更多的查询信息: 而不能是简单的 name 和 value. 例如 age:12 若是这样则没有办法完成比较. 
+//属性名                   属性值                     比较的方式         目标属性的类型
+propertyName, propertyVal, matchType, propertyType 	
+②. 创建一个类 PropertyFilter 来封装上面的信息
+③. 实际上请求参数有特殊的格式: 
+filter_匹配方式的枚举字符串目标属性类型的枚举字符串_属性名
+filter_EQI_loginName
+
+4) 建立 com.atguigu.ems.orm.PropertyFilter：**********************************************************************
+封装属性名      属性值   比较的方式   目标属性的类型 的信息
+
+public class PropertyFilter {
+
+	private String propertyName;
+	private Object propertyVal;
+	
+	public enum MatchType{
+		EQ, GT, GE, LT, LE, LIKE;
+	}
+	
+	private MatchType matchType;
+	
+	public enum PropertyType{
+		
+		I(Integer.class), F(Float.class), S(String.class), D(Date.class);
+		
+		private Class propertyType;
+		
+		private PropertyType(Class propertyType) {
+			this.propertyType = propertyType;
+		}
+		
+		public Class getPropertyType() {
+			return propertyType;
+		}
+	}
+	
+	private Class propertyType;
+
+	public PropertyFilter(String propertyName, Object propertyVal,
+			MatchType matchType, Class propertyType) {
+		this.propertyName = propertyName;
+		this.propertyVal = propertyVal;
+		this.matchType = matchType;
+		this.propertyType = propertyType;
+	}
+
+	public String getPropertyName() {
+		return propertyName;
+	}
+
+	public Object getPropertyVal() {
+		return propertyVal;
+	}
+
+	public MatchType getMatchType() {
+		return matchType;
+	}
+
+	public Class getPropertyType() {
+		return propertyType;
+	}
+	
+	//把请求参数转为 PropertyFilter 的集合
+	public static List<PropertyFilter> parseParamsToPropertyFilters(Map<String, Object> params){
+		List<PropertyFilter> filters = new ArrayList<>();
+		
+		for(Map.Entry<String, Object> entry: params.entrySet()){
+			//value 即为 propertyVal;
+			Object propertyVal = entry.getValue();
+			if(propertyVal == null || "".equals(propertyVal.toString().trim())){
+				continue;
+			}
+
+			//需要解析 key 来得到 propertyName, matchType, propertyVal;
+			String key = entry.getKey(); //EQI_loginName, GTD_birth
+			String str1 = StringUtils.substringBefore(key, "_"); //EQI, GTD
+			
+			String matchTypeCode = StringUtils.substring(str1, 0, str1.length() - 1); //EQ, GT
+			MatchType matchType = Enum.valueOf(MatchType.class, matchTypeCode);
+			
+			String propertyTypeCode = StringUtils.substring(str1, str1.length() - 1); //I, D
+			Class propertyType = Enum.valueOf(PropertyType.class, propertyTypeCode).getPropertyType();
+			
+			String propertyName = StringUtils.substringAfter(key, "_");
+			
+			PropertyFilter filter = new PropertyFilter(propertyName, propertyVal, matchType, propertyType);
+			filters.add(filter);
+		}
+		
+		return filters;
+	}
+
+	@Override
+	public String toString() {
+		return "PropertyFilter [propertyName=" + propertyName
+				+ ", propertyVal=" + propertyVal + ", matchType=" + matchType
+				+ ", propertyType=" + propertyType + "]";
+	}
+}
+
+5)建立  com.atguigu.ems.daos.BaseDao.getPage(int, List<PropertyFilter>)与 2) 对接*********************************************
+
+public Page<T> getPage(int pageNo, List<PropertyFilter> filters) {
+		//1. 把 PropertyFilter 的集合转为 Criterion 的集合. 
+		//即一个 PropertyFilter 对应着一个查询条件.
+		List<Criterion> criterions = parsePropertyFiltersToCriterions(filters);
+		//2. 查询总的记录数
+		Page<T> page = new Page<>();
+		page.setPageNo(pageNo);
+		
+		long totalElements = getTotalElements(criterions);
+		page.setTotalElements(totalElements);
+		
+		//3. 查询当前页面的 Content
+		List<T> content = getContent(page, criterions);
+		page.setContent(content);
+		
+		//4. 返回
+		return page;
+	}
+	
+6) 建立 com.atguigu.ems.daos.BaseDao.parsePropertyFiltersToCriterions(List<PropertyFilter>) 与5)对接：**************************
+
+	private List<Criterion> parsePropertyFiltersToCriterions(
+			List<PropertyFilter> filters) {
+		List<Criterion> criterions = new ArrayList<>();
+		
+		Criterion criterion = null;
+		for(PropertyFilter filter: filters){
+			String propertyName = filter.getPropertyName();
+			Object propertyVal = filter.getPropertyVal();
+			MatchType matchType = filter.getMatchType();
+			Class propertyType = filter.getPropertyType();
+			
+			//把页面传入的查询条件的值转为目标类型
+			propertyVal = ReflectionUtils.convertValue(propertyVal, propertyType);
+			
+			switch(matchType){
+			case EQ:
+				criterion = Restrictions.eq(propertyName, propertyVal);
+				break;
+			case GE:
+				criterion = Restrictions.ge(propertyName, propertyVal);
+				break;
+			case GT:
+				criterion = Restrictions.gt(propertyName, propertyVal);
+				break;
+			case LE:
+				criterion = Restrictions.le(propertyName, propertyVal);
+				break;
+			case LIKE:
+				criterion = Restrictions.like(propertyName, (String)propertyVal, MatchMode.ANYWHERE);
+				break;
+			case LT:
+				criterion = Restrictions.lt(propertyName, propertyVal);
+				break;
+			}
+			
+			if(criterion != null){
+				criterions.add(criterion);
+			}
+		}
+		
+		return criterions;
+	}
+	
+7)建立    *****************************************************************************************
+     com.atguigu.ems.daos.BaseDao.getContent(Page<T>, List<Criterion>)
+    com.atguigu.ems.daos.BaseDao.getTotalElements(List<Criterion>)
+    与5)对接:
+    
+    private List<T> getContent(Page<T> page, List<Criterion> criterions) {
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		Criteria criteria = getCriteria();
+		
+		//3. 添加查询条件
+		for(Criterion criterion: criterions){
+			criteria.add(criterion);
+		}
+		
+		return criteria.setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+
+	private long getTotalElements(List<Criterion> criterions) {
+		//1. 获取实体类的 id 的属性名
+		String idName = getIdName();
+		
+		//2. 查询 id 的 count
+		Projection projection = Projections.count(idName);
+		Criteria criteria = getCriteria();
+		
+		//3. 添加查询条件
+		for(Criterion criterion: criterions){
+			criteria.add(criterion);
+		}
+		
+		criteria.setProjection(projection);
+		return (long) criteria.uniqueResult();
+	}
+	
+8) 把 list3.jsp中 的 body 中点击下一页上一页等 list2 都改为 list3 ；要不人点下一页上一页等时候就会丢了！！！
+   再加 ${queryString}；
+如下：
+		<span class="pagelinks">
+			
+			<s:if test="page.hasPrev">
+				[
+				<a href="emp-list3?pageNo=1&${queryString}">首页</a>
+				/
+				<a href="emp-list3?pageNo=${page.prev }&${queryString}">上一页</a>
+				] 
+			</s:if>
+			
+			<span id="pagelist">
+				转到 <input type="text" name="pageNo" size="1" height="1" class="logintxt"/> 页
+			</span>
+			<s:if test="page.hasNext">
+				[
+				<a href="emp-list3?pageNo=${page.next }&${queryString}">下一页</a>
+				/
+				<a href="emp-list3?pageNo=${page.totalPages }&${queryString}">末页</a>
+				] 
+			</s:if>
+		</span>
+     
+9) 注销list3.jsp 中   $(function(){})函数！！！，登录后进行带查询条件的 分页查询离了！！
+        怎么有 $(function(){})的时候会有哪些影响呢？只是查第一页的时候正确，一点下一页就挂了，干脆注销了
+   还有，我想下载的时候，为什么不能按查询条件的下载，把全部的都下载了？？用带条件的分页查出来后再进行删除，一点就挂了
+   怎么搞？？？还有我点击直接到哪一页，不行了！！！！！
+ bug还很多
+   以后再慢慢思考！！！

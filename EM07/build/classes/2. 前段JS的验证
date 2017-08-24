@@ -1,0 +1,145 @@
+2. 创建登陆页面: 参照已有的页面, 通过源文件的方式来进行新建.
+2.0在Webcontent下面建立一个index.jsp页面
+2.1 页面中填写  
+   <title>欢迎使用培训中心管理系统</title>
+2.2 新建   /EM/WebContent/commons文件夹，在其中建一个common.jsp文件，文件内容如下
+
+<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+    
+<%@ taglib prefix="s" uri="/struts-tags" %>  备注：这个strust2标签
+<%
+	String contextPath = application.getContextPath();
+	pageContext.setAttribute("ctp", contextPath);
+%>
+
+2.3 在index.jsp  页面中<title>欢迎使用培训中心管理系统</title>后面引入
+<link rel="stylesheet" type="text/css" href="${ctp }/css/login.css">
+<script type="text/javascript" src="${ctp }/script/jquery.min.js"></script>
+2.4 在index.jsp页面中引入 
+    <%@ include file="/commons/common.jsp" %>
+2.5 index.jsp页面中 的head中写
+     <script type="text/javascript">
+            /*
+			* 前端基于 JS 的验证.
+			* 
+			* ①: loginName 和 password 字段除去前后空格不能为空
+			* ②: loginName 和 password 字段除去前后空格, 不能少于 6 个字符
+			* ③: loginName 中不能包含特殊字符, 即以字母开头, 后边还可以包含数字和_ 
+			*
+			* 其中前两个验证都通过, 再验证 ③. 
+			*/
+			/*
+     </script>
+     
+2.6 在 index.jsp页面的body中写  如下  ：
+    
+    <div align="center">
+		<s:form action="/security-login" method="POST">
+			<div class="login_div" align="center">
+				<font color="red">
+					<s:text name="%{exception.class.name}"></s:text>
+				</font>
+				
+				<b>用户名</b>
+				<s:textfield name="loginName"></s:textfield>
+				<font color="red">
+					<s:fielderror fieldName="loginName"></s:fielderror>
+				</font>
+
+				<b>密码</b>
+				<s:password name="password"></s:password>
+				<font color="red">
+					<s:fielderror fieldName="password"></s:fielderror>
+				</font>
+				
+				<input type="submit" class="submit" value="登录" />
+				
+			</div>		
+		</s:form>
+	</div>
+
+2.7****). 修改主题为 simple. 
+2.7.1建立  /EM/struts-default.xml 文件；
+然后 去Web App Libraries 中struts2-core-2.3.15.3.jar 找到 /struts-default.xml
+把内容复制到 /EM/struts-default.xml  里面
+
+2.7.2 建立  /EM/default.properties
+然后去Web App Libraries 中找到  struts2-core-2.3.15.3.jar 然后找到org.apache.struts2，然后找到  default.properties
+把其中的内容复制到  /EM/default.properties 中
+2.7.3 复制struts.xml中的 http://struts.apache.org/dtds/struts-2.3.dtd
+然后windous——Preferences——XML——XMlcatalog  然后点 add 把 上面的路劲填进 
+key的框框中；选中 url下拉选项；点system导入路径 
+D:\MYNOTE\BIGDATA\OpenSource\OpenSource\struts-2.3.15.3-all\struts-2.3.15.3\apps\src\core\src\main\resources\struts-2.3.dtd 
+2.7.4 在 default.properties中 用ctrl+f查找 theme，然后复制  内容 “struts.ui.theme”
+2.7.5 在 struts.xml中设置主题
+    <!-- 设置主题 -->
+    <constant name="struts.ui.theme" value="simple"></constant>
+2.7.6 把 css 文件夹全部复制进  /EM/WebContent/css
+                 初步运行  有表单，但是是白色页面
+2.7.7 把 images 文件夹及其中所有图片内容都复制到 /EM/WebContent/images 中
+2.7.8 把 script 文件夹及其里面的内容也复制到 /EM/WebContent/script
+运行时便有了登陆页面
+      
+3. 前端表单的手工完成的 JS 简单验证.
+	<script type="text/javascript">	
+		
+		/*
+		* 前端基于 JS 的验证.
+		* 
+		* ①: loginName 和 password 字段除去前后空格不能为空
+		* ②: loginName 和 password 字段除去前后空格, 不能少于 6 个字符
+		* ③: loginName 中不能包含特殊字符, 即以字母开头, 后边还可以包含数字和_ 
+		*
+		* 其中前两个验证都通过, 再验证 ③. 
+		*/
+		
+		$(function(){
+			$(".submit").click(function(){
+				
+				
+				var flag = true;
+				
+				$("input:not(.submit)").each(function(){
+					var val = $(this).val();
+					val = $.trim(val);
+					$(this).val(val);
+					
+					//密码不回显
+					var name = $(this).attr("name");
+					if(name == "password"){
+						$(this).val("");
+					}
+					
+					//获取 label
+					var label = $(this).prev("b").text();
+					
+					//loginName 和 password 字段除去前后空格不能为空
+					if(val == ""){
+						alert(label + "不能为空!");
+						flag = false;
+					}
+					//loginName 和 password 字段除去前后空格, 不能少于 6 个字符
+					else if(val.length < 6){
+						alert(label + "不能少于 6 个字符!");
+						flag = false;
+					}
+				});
+				
+				if(flag){
+					var loginName = $("input[name='loginName']").val();
+					
+					//loginName 中不能包含特殊字符, 即以字母开头, 后边还可以包含数字和_ 
+					var reg = /^[a-zA-Z]\w*\w$/g;
+					if(!reg.test(loginName)){
+						alert("用户名不合法!");
+						flag = false;
+					}
+				}
+				
+				//取消默认行为
+				return flag; 
+			});
+		})
+
+</script>
+

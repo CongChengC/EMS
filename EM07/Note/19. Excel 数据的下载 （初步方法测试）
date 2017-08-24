@@ -1,0 +1,104 @@
+19.0 Excel 数据的下载
+1). Struts2 如何完成文件的下载: 使用 Stream 类型的 result. 具体使用可以参看 StreamResult 的 JavaDoc
+2). 如何生成 Excel 文件: 使用 POI 来操作 Excel. 具体参看:
+poi-3.5-FINAL\docs\spreadsheet\quick-guide.html
+3). 具体完成的步骤:
+①. 先完成 Action 部分的代码: 提供一个动态的 Excel 文档的下载.
+	> 调用 Service 的方法. Service 方法会在服务器的一个目录下生成一个临时文件
+	> inputStream 指向临时文件即可
+	> 下载完成后, 要能够删除临时文件. 在拦截器中删除比较合适. 
+	> 既然是临时文件, 则其文件名应该是一个随机的文件名. 
+②. 自定义拦截器, 删除临时文件. 
+	> 创建一个类, 实现 Interceptor 接口
+	> 在配置文件中进行配置. 
+	> 需要在拦截器调用了 invocation.invoke(); 之后进行删除. 因为在 invocation.invoke(); 之前, 目标方法还未执行呢.
+	> 如何在拦截器中得到临时文件的文件名: 
+③. 
+
+***********操作步骤*********************************************
+1)ctrl +shift +T 然后输入  StreamResult 进程查找，然后关联源代码struts-2.3.15.3-all.zip
+window——》show view ——》other——》搜索javadoc
+选中StreamResult类，看到 Javadoc中有如下内容： 
+
+This result type takes the following parameters: 
+
+contentType - the stream mime-type as sent to the web browser (default = text/plain). 
+contentLength - the stream length in bytes (the browser displays a progress bar). 
+contentDisposition - the content disposition header value for specifing the file name (default = inline, values are typically attachment;filename="document.pdf". 
+inputName - the name of the InputStream property from the chained action (default = inputStream). 
+bufferSize - the size of the buffer to copy from input to output (default = 1024). 
+allowCaching if set to 'false' it will set the headers 'Pragma' and 'Cache-Control' to 'no-cahce', and prevent client from caching the content. (default = true) 
+contentCharSet if set to a string, ';charset=value' will be added to the content-type header, where value is the string set. If set to an expression, the result of evaluating the expression will be used. If not set, then no charset will be set on the header 
+These parameters can also be set by exposing a similarly named getter method on your Action. For example, you can provide getContentType() to override that parameter for the current action.
+
+Example: 
+
+ <result name="success" type="stream">
+   <param name="contentType">image/jpeg</param>
+   <param name="inputName">imageStream</param>
+   <param name="contentDisposition">attachment;filename="document.pdf"</param>
+   <param name="bufferSize">1024</param>
+ </result>
+
+2)新建一个 helloworld.txt 文本 ，里面随便写点内容比如 hello world！！！ 
+把该文件夹复制到  /EM04/WebContent/test/helloworld.txt 路径下。
+
+
+3) 新建一个类：
+/EM04/test/com/atguigu/ems/test/ActionTest.java，代码如下：
+
+@Scope("prototype")
+@Controller
+public class ActionTest {
+
+	//输入流
+	private InputStream inputStream;
+	
+	//文件下载的类型
+	private String contentType;
+	//下载的文件的长度
+	private long contentLength;
+	//下载的文件的文件名
+	private String fileName;
+	
+	public InputStream getInputStream() {
+		return inputStream;
+	}
+	public String getContentType() {
+		return contentType;
+	}
+	public long getContentLength() {
+		return contentLength;
+	}
+	public String getContentDisposition () {
+		return "attachment;filename=" + fileName;
+	}
+	
+	public String testFileDownload() throws IOException{
+		//确定文件下载相关的成员变量的值
+		inputStream = ServletActionContext.getServletContext().getResourceAsStream("/test/helloworld.txt");
+		contentType = "text/html";
+		contentLength = inputStream.available();
+		fileName = "helloworld.txt";
+		
+		return "download-success";
+	}
+}
+
+
+4)在 /EM04/WebContent/test/test.jsp的body中添加如下代码：
+
+  <a href="test-testFileDownload">testFileDownload</a>
+  
+5) 在 /EM04/conf/struts.xml中<package>中添加如下代码：
+
+		<action name="test-*"
+		        class="actionTest"
+		        method="{1}">
+		        <result type="stream" name="download-success"></result>
+		</action>
+		
+		
+6.run as 一下  test.jsp
+浏览器中输入：http://localhost:8080/ems-17final/test/test.jsp
+点击下载，比如下载到桌面。可以看到文件能顺利的下载下来，检查里面内容

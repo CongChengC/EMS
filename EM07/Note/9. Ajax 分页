@@ -1,0 +1,500 @@
+9. Ajax 分页小结:
+1). 返回的是 JSON 数据, 页面上通过 javascript 来实现信息的显示
+
+2). Struts2 如何使用 Ajax 呢? 
+①. 加入 JSON 插件包
+②. Struts2 使用的包需要继承自 json-default
+③. 使用 json 类型的 result, 并设置相应的参数: root, excludeProperties
+
+3). 在页面上使用 jQuery 显示所有的数据. 
+①. 实际的显示流程: 第一个请求时, 还是需要正常的转发页面. 在页面上再次点击翻页的超链接时, 使用 Ajax.
+
+4). 转到多少页, 自己完成. 
+
+5). 小结:
+①. 若一个隐藏域, 没有 name 属性, 则其就是给 javascript 使用的. 使用隐藏域可以帮助 Ajax 来保存值.
+②. 明确需要更新的区域, 一部分一部分完成更新. 
+③. 使用 javascript 的三目运算符
+④. 在 javabean 中使用工具方法. 
+
+*******************************************************************
+具体步骤：
+9.1 点开：
+在联网条件下：
+OpenSource/struts-2.3.15.3-all/struts-2.3.15.3/docs/WW/docs/home.html
+点  Guides——————》点  AJAX——————》点  JSON Plugin
+
+
+可以看到，不包括哪些属性的例子：
+Excluding properties
+
+<!-- Result fragment -->
+<result type="json">
+  <param name="excludeProperties">
+    login.password,
+    studentList.*\.sin
+  </param>
+</result>
+ 
+<!-- Interceptor fragment -->
+<interceptor-ref name="json">
+  <param name="enableSMD">true</param>
+  <param name="excludeProperties">
+    login.password,
+    studentList.*\.sin
+  </param>
+</interceptor-ref>
+
+包括哪些属性的例子：
+Including properties
+
+<!-- Result fragment -->
+<result type="json">
+  <param name="includeProperties">
+    ^entries\[\d+\]\.clientNumber,
+    ^entries\[\d+\]\.scheduleNumber,
+    ^entries\[\d+\]\.createUserId
+  </param>
+</result>
+
+9.2 在  /EM/WebContent/commons/tree_data1.json中巴 emp-list修改为 emp-list2
+       children":[{
+			"id":911,
+			"text":"员工信息查询",
+			"url":"emp-list2"
+		}
+
+
+        在EmployeeAction中增加一个如下方法：
+	public String list2(){
+		page = employeeService.getPage(pageNo);
+		return "list2";
+	}
+	
+9.3 在  struts.xml总加入如下，意思是我只用EmployeeAction的page属性进行返回：
+    
+    		<result name="list2" type="json">
+			        <param name="root">page</param>
+			</result>
+
+9.4   在/EM/WebContent/test/test.jsp新建一个 test.jsp
+引入：<%@ include file="/commons/common.jsp" %>
+加入一个 <script type="text/javascript" src="${ctp }/script/jquery.min.js"></script>
+
+在body中加入：  <button id="testAjax">Test Ajax</button>
+
+在head中加入：
+<script type="text/javascript">
+     $(function(){
+    	 $("#testAjax").click(function(){
+    		 var url = "emp-list2";
+    		 var args = {"time":new Date(),"pageNo":1};
+    		 $.post(url,args,function(data){
+    			 
+    		 },"json");
+    		 return false;
+    	 });
+     })
+
+</script>
+
+9.5 然后对 test.jsp  Run as 一下：
+有异常  There is no result type defined for type 'json' mapped with name 'list2'.  Did you mean 'json'? - result
+我们检查： struts2-json-plugin-2.3.15.3.jar包是已经放到lib里面了
+再看Web App Libraries 中  的  struts2-json-plugin-2.3.15.3.jar
+中的   /struts-plugin.xml
+
+可见  <package name="json-default" extends="struts-default"> </package>
+即 json-default继承了 struts-default
+在 /EM/conf/struts.xml中把继承的包修改如下，不再是继承struts-default而是继承json-default：
+
+<package name="default" namespace="/" extends="json-default"></package>
+
+9.6  Run as 一下 list.jsp ： 在谷歌浏览器输入 http://localhost:8080/EM/test/test.jsp
+页面出来了。但点击 testAjax按钮没有反应。因为 引入：<%@ include file="/commons/common.jsp" %>没导入
+导入上述后，按 F12，再点击  testAjax
+页面中的 Preview一栏有  failed to lazily initialize a collection of role: 
+com.atguigu.ems.entities.Department.employees, could not 
+initialize proxy - no Session 懒加载的异常
+在 类 Employee中有 
+	// 所属部门
+	private Department department;
+在类 Department 有
+	//员工
+	private Set<Employee> employees = new HashSet<>();
+都会初始化，但我们不需要这些。我们需要 Employee 的department，和 roles
+
+这就需要好好研究 9.1了。
+把 strus.xml中的 
+    		<result name="list2" type="json">
+			        <param name="root">page</param>
+			</result>
+修改为：
+
+<result name="list2" type="json">
+	<param name="root">page</param>
+	<param name="excludeProperties">content.*\.editor,content.*\.department,content.*\.roles</param>
+</result>
+
+意思是：content 中的  department，roles都不要了，这个editor是后面的什么需求吗/？？？先放在这里吧
+
+9.7 run as 一下 list.jsp 开谷歌浏览器：输入 http://localhost:8080/EM/test/test.jsp
+按 F12，然后点击 testAjax按钮，在点击  emp-list2，点Previe，然后点开 content下拉的小三角按钮可以看到：
+content: [,…]
+0: {birth: null, email: "aa@163.com", employeeId: 1, employeeName: "xiaoyong", enabled: 1, gender: "1",…}
+birth: null
+email: "aa@163.com"
+employeeId: 1
+employeeName: "xiaoyong"
+enabled: 1
+gender: "1"
+isDeleted: 1
+loginName: "AAAAAA"
+mobilePhone: ""
+password: "06e5fff4a2dfa8bafcee6ffda4feb377"
+resume: null
+roleNames: "CC"
+roles2: ["9"]
+visitedTimes: 91
+
+这里没有 department，但怎么有roleNames呢？因为以前Employee类中有getRoleNames()工具方法了。这两者的工具方法如下：
+
+  	//工具方法, 返回 role 的 name 的字符串
+	public String getRoleNames(){
+		if(this.roles.size() > 0){
+			StringBuilder str = new StringBuilder();
+			
+			for(Role role: roles){
+				str.append(role.getRoleName())
+				   .append(",");
+			}
+			
+			str.replace(str.length() - 1, str.length(), "");
+			return str.toString();
+		}else{
+			return "";
+		}
+	}
+	
+	//工具方法: 返回 department.departmentName
+	public String getDepartmentName(){
+		return department.getDepartmentName();
+	}
+
+9.8 run as 一下 list.jsp 开谷歌浏览器：输入 http://localhost:8080/EM/test/test.jsp
+按 F12，然后点击 testAjax按钮，在点击  emp-list2，点Previe，然后点开 content下拉的小三角按钮可以看到：
+content: [,…]
+0: {birth: null, departmentName: "公关部", email: "aa@163.com", employeeId: 1, employeeName: "xiaoyong",…}
+birth: null
+departmentName: "公关部"
+email: "aa@163.com"
+employeeId: 1
+employeeName: "xiaoyong"
+enabled: 1
+gender: "1"
+isDeleted: 1
+loginName: "AAAAAA"
+mobilePhone: ""
+password: "06e5fff4a2dfa8bafcee6ffda4feb377"
+resume: null
+roleNames: "CC"
+roles2: ["9"]
+visitedTimes: 91
+	
+看到了吗？departmentName和roleNames都有了
+
+9.9 在页面上使用 jQuery 显示所有的数据. 
+①. 实际的显示流程: 第一个请求时, 还是需要正常的转发页面. 在页面上再次点击翻页的超链接时, 使用 Ajax.
+把 /EM/WebContent/commons/tree_data1.json中的emp-list2改回emp-list：
+children":[{
+			"id":911,
+			"text":"员工信息查询",
+			"url":"emp-list2"
+}
+9.10 struts.xml 中的 action里面的  result 修改为：
+	
+	<result name="list">/WEB-INF/pages/emps/list2.jsp</result>
+	<!--  
+	<result name="list">/WEB-INF/pages/emps/list.jsp</result>
+	-->
+9.11 复制/EM/WebContent/WEB-INF/pages/emps/list.jsp中的list.jsp
+               名字为 list2.jsp也放在emps文件夹中，并修改list2.jsp中的
+     href="emp-list? 改为  href="emp-list2? 当点击上一页下一页时候，返回的就是list2.jsp了
+     
+9.12 在/EM/WebContent/WEB-INF/pages/emps/list2.jsp中的head里面：
+
+<script type="text/javascript">
+   $(function(){
+	   $(".pagelinks").click(function(){
+		   alert("Ajax 翻页");
+		   return false;
+	   });
+   })
+</script>
+重新启动服务器，在谷歌浏览器中按F12并输入：http://localhost:8080/EM/emp-list
+点击 下一页，或末页可以弹出 “"Ajax 翻页”
+
+9.13 修改9.12 中的<script type="text/javascript"></script>内容：
+9.13.1:记住不要把 $(".pagelinks a")中的 a弄丢了
+
+<script type="text/javascript">
+   $(function(){
+	   $(".pagelinks a").click(function(){
+		 //1. 准备 Ajax 请求
+		 var url = "${ctp}/emp-list2";
+		 var pageNo = $(this).next(":hidden").val();
+		 var args = {"time":new Date(),"pageNo":pageNo};
+		 
+		 $.post(url,args,function(data){
+				
+		 },"json");	
+	   });
+   })
+
+</script>
+
+9.13.2 在下一页后面加这一行：<!-- 存放 pageNo 的隐藏域 -->
+
+<s:if test="page.hasNext">
+	    [
+		<a href="emp-list2?pageNo=${page.next }">下一页</a>
+		<input type="hidden" value="${page.next }"/><!-- 存放 pageNo 的隐藏域 -->
+		/
+		<a href="emp-list2?pageNo=${page.totalPages }">末页</a>
+		] 
+</s:if>
+
+9.13.3 run as 工程进行测试，然后谷歌浏览器中输入：http://localhost:8080/EM/emp-list
+点击 F12,点击下一页，点emp-list2，点Head可以看到  pageNo:2
+
+9.14 这里最巧妙地是隐藏域的设计
+把  首页， 上一页，下一页，末页模块都 <!-- 存放 pageNo 的隐藏域 --> 代码更新如下：
+
+		<span class="pagelinks">
+			
+			<span id="prevPageLinks">
+				[
+				<a href="emp-list2?pageNo=1">首页</a>
+				<input type="hidden" value="1"/>
+				/
+				<a href="emp-list2?pageNo=${page.prev }">上一页</a>
+				<input type="hidden" value="${page.prev }" id="prevPageNoVal"/>
+				] 
+			</span>
+			
+			<span id="pagelist">
+				转到 <input type="text" name="pageNo" size="1" height="1" class="logintxt"/> 页
+			</span>
+			
+			<span id="nextPageLinks">
+				[
+				<a href="emp-list2?pageNo=${page.next }">下一页</a>
+				<input type="hidden" value="${page.next }" id="nextPageNoVal"/><!-- 存放 pageNo 的隐藏域 -->
+				/
+				<a href="emp-list2?pageNo=${page.totalPages }">末页</a>
+				<input type="hidden" value="${page.totalPages }"/>
+				] 
+			</span>
+		</span>
+
+9.15  把 <script type="text/javascript"></script>内部代码更新如下：
+
+<script type="text/javascript">
+	$(function(){
+		//若当前页面是第一页, 则隐藏 prevPageLinks
+		if("${page.pageNo}" == "1"){
+			$("#prevPageLinks").hide();
+		}
+		//若当前页面是最后一页, 则隐藏 nextPageLinks
+		//自己完成
+		if("${page.pageNo}" == "${page.totalPages }"){
+			$("#nextPageLinks").hide();
+		}
+		
+		$(".pagelinks a").click(function(){
+			//1. 准备 Ajax 请求
+			var url = "${ctp}/emp-list2";
+			var pageNo = $(this).next(":hidden").val();
+			var args = {"pageNo":pageNo,"time":new Date()};
+			
+			//2. 发送 Ajax 请求
+			$.post(url, args, function(data){
+				//3. 使用 jQuery 和 javascript 更新页面的内容
+				//3.1 更新: .pagebanner
+				$(".pagebanner").html("共" + data.totalElements + "条记录"
+						+ "&nbsp;&nbsp;"
+						+ "共" + data.totalPages + "页"
+						+ "&nbsp;&nbsp;"
+						+ "当前第" + data.pageNo + "页");	
+				//3.2 更新: .pagelinks
+				if(data.pageNo == 1){
+					$("#prevPageLinks").hide();
+				}else{
+					$("#prevPageLinks").show();
+				}
+				//关于 nextPageLinks 待实现。 
+				if(data.pageNo == data.totalPages){
+				    $("#nextPageLinks").hide();
+			    }else{
+				    $("#nextPageLinks").show();
+			    }
+				
+				//3.3 更新隐藏域中的 value 值
+				$("#prevPageNoVal").val(data.prev);
+				$("#nextPageNoVal").val(data.next);
+				
+				//3.4 更新 table 中 tbody 的内容. 
+			},"json");
+			
+			
+			return false;
+		});
+	})
+</script>
+
+9.16 上面只是能更新 页码，但是不能  更新 table 中 tbody 的内容.在9.15基础上继续：
+9.16.1在上述的list2.jsp中Ctrl +F只可以搜索到 一个  table ，我们对
+      //3.4 更新 table 中 tbody 的内容. 试着写如下代码：
+      $("table tbody").empty();
+      打开  jQueryAPI_1.7.1_CN.chm 搜索  empty：
+      描述为： 把所有段落的子元素（包括文本节点）删除
+   run as  工程，然后浏览器中输入： http://localhost:8080/EM/emp-list
+   列表出来了；点击下一页，列表中内容全部没有了！说明上句$("table tbody").empty()代码生效了。
+   
+9.16.2 更新  //3.4 更新 table 中 tbody 的内容，代码如下：
+      //3.4 更新 table 中 tbody 的内容. 
+				
+	var $tbody = $("table tbody");
+	$tbody.empty();
+	
+	for( i=0; i<data.content.length;i++){
+		var item = data.content[i];
+		
+		var $tr = $("<tr></tr?");
+		$tr.append("<td><a>"+item.loginName +"</a></td>");
+		
+		$tbody.append($tr);
+	}
+      
+刷新页面，然后点击下一页，可以看到第一列     登陆名    可以显示出来了。其余的可以按此方法类比。
+ 
+9.16.3  进一步代码更新如下：
+            //3.4 更新 table 中 tbody 的内容. 
+				var $tbody = $("table tbody");
+				$tbody.empty();
+				
+				for( i=0; i<data.content.length;i++){
+					var item = data.content[i];
+					
+					var $tr = $("<tr></tr?");
+					$tr.append("<td><a>"+item.loginName +"</a></td>");
+					$tr.append("<td>" + item.employeeName + "</td>");
+					
+					$tr.append("<td>" + (item.enabled == 1 ? '允许':'禁止') + "</td>");
+					$tr.append("<td>" + item.departmentName + "</td>");
+					
+					$tr.append("<td>" + item.displayBirth + "</td>");
+					$tr.append("<td>" + (item.gender == 1 ? '男':'女') + "</td>");
+					
+					$tr.append("<td>" + item.email + "</td>");
+					$tr.append("<td>" + (item.mobilePhone == null ? "" : item.mobilePhone) + "</td>");
+					
+					$tr.append("<td>" + item.visitedTimes + "</td>");
+					$tr.append("<td>" + (item.isDeleted == 1 ? '删除':'正常') + "</td>");
+					
+					$tr.append("<td>-" + item.roleNames + "</td>");
+					
+					$tbody.append($tr);
+				}     
+      
+ 刷新页面，然后点击下一页，可以看到  “生日 ”一栏  需要进行格式处理，  它显示的 是一个 undefined； 当然最后一栏 “操作”比较麻烦，
+ 
+ 我们留在下一步进行处理。先处理   “生日 ”一栏
+ 在 com.atguigu.ems.entities.Employee 中加入工具方法如下：
+ 
+ 	private static DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+	
+	//工具方法: 返回 birth 的字符串，注意这个  if 判断，否则会用空指针异常。
+	public String getDisplayBirth(){
+		if(this.birth == null){
+			return "";
+		}
+		return dateFormat.format(birth);
+	}
+ 
+  刷新页面，然后点击下一页，可以看到  “生日 ”一栏可以了。
+  
+ 9.16.4  进一步代码更新如下，处理“操作”一栏：   
+         修改，稍微容易些：
+	var $td = $("<td></td>");
+	$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+	$tr.append($td);
+   刷新页面，然后点击下一页，可以看到 操作  一栏下面的修改 OK 了。       
+ 
+ 9.16.5 接下来，是要往  9.16.4的  $td 里面 $td.append 的东西。
+ 插入的内容如下：
+    if(item.isDeleted == 1){
+		$td.append("&nbsp;&nbsp;删除")
+	}else{
+		$td.append("&nbsp;&nbsp;");
+		var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+		$deleteANode.click(function(){
+			deleteTr(this);				
+			return false;
+		});
+		$td.append($deleteANode);
+		$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+	}
+
+
+ 最终更新 table 中 tbody 的内容代码如下：
+           //3.4 更新 table 中 tbody 的内容. 
+				var $tbody = $("table tbody");
+				$tbody.empty();
+				
+				for( i=0; i<data.content.length;i++){
+					var item = data.content[i];
+					
+					var $tr = $("<tr></tr?");
+					$tr.append("<td><a>"+item.loginName +"</a></td>");
+					$tr.append("<td>" + item.employeeName + "</td>");
+					
+					$tr.append("<td>" + (item.enabled == 1 ? '允许':'禁止') + "</td>");
+					$tr.append("<td>" + item.departmentName + "</td>");
+					
+					$tr.append("<td>" + item.displayBirth + "</td>");
+					$tr.append("<td>" + (item.gender == 1 ? '男':'女') + "</td>");
+					
+					$tr.append("<td>" + item.email + "</td>");
+					$tr.append("<td>" + (item.mobilePhone == null ? "" : item.mobilePhone) + "</td>");
+					
+					$tr.append("<td>" + item.visitedTimes + "</td>");
+					$tr.append("<td>" + (item.isDeleted == 1 ? '删除':'正常') + "</td>");
+					
+					$tr.append("<td>" + item.roleNames + "</td>");
+					
+					
+					var $td = $("<td></td>");
+					$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+					
+					if(item.isDeleted == 1){
+						$td.append("&nbsp;&nbsp;删除")
+					}else{
+						$td.append("&nbsp;&nbsp;");
+						var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+						$deleteANode.click(function(){
+							deleteTr(this);				
+							return false;
+						});
+						$td.append($deleteANode);
+						$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+					}
+					
+					$tr.append($td);
+					
+					$tbody.append($tr);
+				}
+				
+				
+				
+刷新页面，然后点击下一页测试一下，OK！

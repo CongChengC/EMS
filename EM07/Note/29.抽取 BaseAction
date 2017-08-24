@@ -1,0 +1,180 @@
+29. 抽取 BaseAction
+
+具体步骤：
+1)新建 com.atguigu.ems.actions.BaseAction：
+
+public class BaseAction<T> extends ActionSupport implements ModelDriven<T>,
+		Preparable, SessionAware, RequestAware, ParameterAware {
+
+}
+
+2)加入代码  
+	@Autowired
+	protected BaseService<T> service;
+	
+3) 把 EmployeeAction中的 如下方法粘贴到BaseAction中：
+   备注： ctrl + F 然后把 private 全部替换为 protected
+     然后把 Employee 改 为 T
+
+   private Employee model;
+
+	@Override
+	public void prepare() throws Exception {}
+
+	@Override
+	public Employee getModel() {
+		return model;
+	}
+
+	private Map<String, Object> session = null;
+	
+	@Override
+	public void setSession(Map<String, Object> arg0) {
+		this.session = arg0;
+	}
+
+	private Map<String,Object> request;
+	
+	@Override
+	public void setRequest(Map<String, Object> arg0) {
+        this.request = arg0;		
+	}
+
+	private Map<String, String[]> params = null;
+		
+	@Override
+	public void setParameters(Map<String, String[]> arg0) {
+         this.params = arg0;		
+	}
+
+4)com.atguigu.ems.actions.EmployeeAction修改成如下继承：
+
+@Scope("prototype")
+@Controller
+public class EmployeeAction extends BaseAction<Employee>{}
+
+
+然后 注销 
+//	@Autowired
+//	private EmployeeService employeeService;
+
+然后：com.atguigu.ems.actions.EmployeeAction中如下代码剪切到BaseAction
+再把    备注： ctrl + F 然后把 private 全部替换为 protected
+
+    //几乎所有的 Action 都需要来显示分页消息, 所以可以把 Page 作为成员变量.
+	private Page<Employee> page;
+	
+	public Page<Employee> getPage(){
+		return page;
+	}
+	
+	//获取当前第几页, 也是一个 Action 级别的要求。 
+	private int pageNo;
+	
+	
+	public void setPageNo(String pageNo){
+		this.pageNo = 1;
+		try {
+			this.pageNo = Integer.parseInt(pageNo);
+		} catch (NumberFormatException e) {}
+	}
+	
+	//每一个Action 实际上都会有接收id 的任务，所以id作为成员变量。
+	private Integer id;
+	
+	public void setId(Integer id) {
+		this.id = id;
+	}
+	
+5)把EmployeeAction如下代码也复制到 BaseAction
+再把    备注： ctrl + F 然后把 private 全部替换为 protected
+        //输入流
+		private InputStream inputStream;
+		
+		//文件下载的类型
+		private String contentType;
+		//下载的文件的长度
+		private long contentLength;
+		//下载的文件的文件名
+		private String fileName;
+		
+		public InputStream getInputStream() {
+			return inputStream;
+		}
+		public String getContentType() {
+			return contentType;
+		}
+		public long getContentLength() {
+			return contentLength;
+		}
+		public String getContentDisposition () {
+			return "attachment;filename=" + fileName;
+		}
+		
+		private File file;
+		
+		public void setFile(File file) {
+			this.file = file;
+		}
+	
+6)此时 EmployeeAction中的 employeeService.XXXX方法报错。
+直接用 service 点取也会报错，因为是子类所独有的！！
+
+          在 EmployeeAction中添加方法：
+
+	public EmployeeService getEmployeeService(){
+		return (EmployeeService) service;
+	}	
+	
+	把报错的employeeService点取全部改为：  getEmployeeService()点取
+	
+7)把 com.atguigu.ems.actions.RoleAction继承 BaseAction
+@Scope("prototype")
+@Controller
+public class RoleAction extends BaseAction<Role> {}
+
+然后注销：
+//	@Autowired
+//	private AuthorityService authorityService;
+
+然后： 把 authorityService点取 修改为 service
+
+然后：注销如下代码
+//	private Map<String, Object> request;
+//
+//	@Override
+//	public void setRequest(Map<String, Object> request) {
+//        this.request = request;
+//	}
+//
+//	@Override
+//	public void prepare() throws Exception {}
+//
+//	private Role model;
+//	
+//	@Override
+//	public Role getModel() {
+//		return model;
+//	}
+
+8) EmployeeDao中我们打开了如下代码，
+
+	public List<Employee> getContent(Page<Employee> page){
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		String hql = "FROM Employee e "
+				+ "LEFT OUTER JOIN FETCH e.department "
+				+ "LEFT OUTER JOIN FETCH e.roles ";
+		return getSession().createQuery(hql).setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+	
+	我们把它关起来。
+	我们在 strut.xml 中把 editor排除，因为它下面还有editor，下面还有editor，还有。。。。。
+			<result name="list2" type="json">
+				<param name="root">page</param>
+				<param name="excludeProperties">content.*\.editor,content.*\.department,content.*\.roles</param>
+			</result>
+
+
+9)			

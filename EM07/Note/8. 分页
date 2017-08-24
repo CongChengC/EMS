@@ -1,0 +1,381 @@
+8.0 分页
+分页小结：
+1).分页的基本流程:
+页面传入 pageNo, pageSize(有时候可以不传递, 使用默认值), 
+调用 Dao 方法: ①. 查询总的记录数. ②. 查询当前页面的 content. 
+向页面上回传 totalElements, totalPages(可以由 totalElements 和 pageSize 计算得到), content
+
+2).创建 Page 对象来封装关于分页页面需要显示的若干多属性
+pageNo, pageSize, totalElements, content
+
+3). 在 Dao 中编写 3 个方法:
+①. getTotalElements
+②. getContent
+③. getPage: 把 getTotalElements 和 getContent 的结果组装成 Page 对象
+
+4). Action 方法把 Page 放入到 request 中, 而且返回到页面上.
+
+5). 页面显示
+ 
+6). 注意:
+①. 默认情况下, 若验证文件的名字为 [ActionClassName]-validation.xml, 则该验证适用于 Action 的所有请求. 但不可能对于一个 Action
+的所有请求使用同样的验证规则, 可以考虑使用如下格式: [ActionClassName]-[actionName]-validation.xml 
+②. 页面显示级联属性时, 可能会出现懒加载异常. 因为默认情况下, Service 方法正常结束后, 即提交事务, 关闭 Session. 所以若 Dao 中
+没有初始化关联的属性, 页面上还显示该属性, 则可能就会出现懒加载异常. 可以在查询的时候, 把关联的属性都进行初始化. 
+③. 页面上显示角色, 一个 Employee 实际上需要对应多个 Role. 所以只能显示角色名字的字符串, 多个角色的名字使用 , 进行分割. 
+④. 若在 URL 上恶意输入不合法的 pageNo, 则可能会导致结果显示异常:
+http://localhost:8080/ems-17/emp-list?pageNo=zz
+解决: 在 setPageNo() 方法中传入 String 类型的参数!
+public void setPageNo(String pageNo) {
+	this.pageNo = 1;
+	try {
+		this.pageNo = Integer.parseInt(pageNo);
+	} catch (NumberFormatException e) {}
+}
+
+7). 使用 JS 代码使页面的跳转其作用. 
+********************************************************************
+详细步骤：
+
+8.1 建立包 com.atguigu.ems.orm然后在里面建立类Page如下：
+
+public class Page<T> {
+
+	private int pageNo;
+	private int pageSize = 5;
+
+	private long totalElements;
+	private List<T> content;
+
+	public void setPageNo(int pageNo) {
+		if (pageNo < 1) {
+			pageNo = 1;
+		}
+		this.pageNo = pageNo;
+	}
+
+	public int getPageNo() {
+		if(pageNo > getTotalPages()){
+			pageNo = getTotalPages();
+		}
+		
+		return pageNo;
+	}
+
+	public void setPageSize(int pageSize) {
+		this.pageSize = pageSize;
+	}
+
+	public int getPageSize() {
+		return pageSize;
+	}
+
+	public long getTotalElements() {
+		return totalElements;
+	}
+
+	public void setTotalElements(long totalElements) {
+		this.totalElements = totalElements;
+	}
+
+	public List<T> getContent() {
+		return content;
+	}
+
+	public void setContent(List<T> content) {
+		this.content = content;
+	}
+
+	public int getTotalPages() {
+		long totalPages = totalElements / pageSize;
+
+		if (totalElements % pageSize != 0) {
+			totalPages++;
+		}
+
+		return (int) totalPages;
+	}
+
+	public boolean isHasNext() {
+		return pageNo <= getTotalPages();
+	}
+
+	public boolean isHasPrev() {
+		return pageNo > 1;
+	}
+
+	public int getNext() {
+		if (isHasNext()) {
+			return pageNo + 1;
+		}
+
+		return getTotalPages();
+	}
+
+	public int getPrev() {
+		if (isHasPrev()) {
+			return pageNo - 1;
+		}
+
+		return 1;
+	}
+}
+
+8.2  在包 com.atguigu.ems.daos中 的 EmployeeDao中添加如下方法：
+
+   public Page getPage(int pageNo){
+		Page<Employee> page = new Page<>();
+		page.setPageNo(pageNo);
+		
+		long totalElements = getTotalElements();
+		page.setTotalElements(totalElements);
+		
+		List<Employee> content = getContent(page);
+		page.setContent(content);
+		
+		return page;
+	}
+	
+	
+	public List<Employee> getContent(Page<Employee> page){
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		String hql = "FROM Employee e "
+				+ "LEFT OUTER JOIN FETCH e.department "
+				+ "LEFT OUTER JOIN FETCH e.roles ";
+		return getSession().createQuery(hql).setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+	
+
+	
+	public long getTotalElements(){
+		String hql = "SELECT count(e.id) "
+				     +"FROM Employee e";
+		return (long) getSession().createQuery(hql).uniqueResult();
+	}
+	
+	
+8.3  com.atguigu.ems.service 包中 EmployeeService方法中添加 方法：
+
+    @Transactional
+	public Page<Employee> getPage(int pageNo){
+		return employeeDao.getPage(pageNo);
+	}
+	
+8.4 在com.atguigu.ems.test.ApplicationContextTest测试类中添加测试方法：
+
+	
+    @Test
+	public void testGetPage(){
+		Page<Employee> page = employeeService.getPage(4);
+		System.out.println(page.getTotalElements());
+		System.out.println(page.getTotalPages());
+		System.out.println(page.getContent());
+	}
+
+8.5 在 com.atguigu.ems.actions.EmployeeAction中添加如下方法
+
+    //几乎所有的 Action 都需要来显示分页消息, 所以可以把 Page 作为成员变量.
+	private Page<Employee> page;
+	
+	public Page<Employee> getPage(){
+		return page;
+	}
+	
+	//获取当前第几页, 也是一个 Action 级别的要求。 
+	private int pageNo;
+	
+	
+	public void setPageNo(String pageNo){
+		this.pageNo = 1;
+		try {
+			this.pageNo = Integer.parseInt(pageNo);
+		} catch (NumberFormatException e) {}
+	}
+	
+	
+	public String list(){
+		page = employeeService.getPage(pageNo);
+		return "list";
+	}
+	
+8.6  在 struts.xml 中 引入 
+     <result name="list">/WEB-INF/pages/emps/list.jsp</result>
+               然后建立/EM/WebContent/WEB-INF/pages/emps/list.jsp 文件
+               运行工程 http://localhost:8080/EduMS/login.jsp
+     输入登录名：AABBCC 密码 123456
+     点击员工管理——员工信息查询选项；然后 在右边 页面中右键 view frame source 点开 源码：
+     把如下这部分黏贴到 自己工程中的 list.jsp 页面中
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Insert title here</title>
+
+<link rel="stylesheet" type="text/css" href="css/content.css">
+<link rel="stylesheet" type="text/css" href="css/list.css">
+<link rel="stylesheet" type="text/css" href="script/thickbox/thickbox.css">
+
+<script type="text/javascript" src="script/jquery-1.4.2.min.js"></script>
+<script type="text/javascript" src="script/thickbox/thickbox.js"></script>
+     
+然后引入：<%@ include file="/commons/common.jsp" %>
+在引入的css等路径前加 ${ctp}/
+
+8.7  把上述源码中   body 部分直接copy到 list.jsp中
+把/EduMS全部替换为${ctp} 
+把           共 74 条记录                    更改成                             共 ${page.totalElements} 条记录       
+把             共 15 页                          改为                                  共  ${page.totalPages} 页    
+把          当前第 1 页                       改为                                    当前第 ${page.pageNo} 页   
+
+8.8  在list.jsp的
+      <span class="pagelinks">
+      
+      </span>
+       
+                中加入判断，把首页，上一页；末页，下一页包起来如下：
+      		<s:if test="page.hasPrev">
+			    [
+				<a href="emp-list?pageNo=1">首页</a>
+				/
+				<a href="emp-list?pageNo=${page.prev }">上一页</a>
+				] 
+			</s:if>   
+			
+			
+			<s:if test="page.hasNext">
+			    [
+				<a href="emp-list?pageNo=${page.next }">下一页</a>
+				/
+				<a href="emp-list?pageNo=${page.totalPages }">末页</a>
+				] 
+			</s:if>       
+                
+
+  8.9 <tbody> </tbody>中的 <tr></tr>只留一个，别的删掉，因为会用一个循环代替           
+      
+      把留下的一个<tr></tr>中的内容全部装在     循环   <s:iterator value="${page.content }"></s:iterator>里面
+      
+      把<tr></tr>中内容原来如下：
+                     <tr>
+						<td><a id="loginname" href="">AAAAAA</a></td> 
+						<td>xiaoyong</td>
+						<td>允许</td>
+						<td>公关部</td>
+						<td>
+						</td>
+						<td>男</td>
+						<td><a id="email" href="">aa@163.com</a></td>
+						<td></td>
+						<td>91</td>
+						<td id="deleted-1">删除</td>
+						<td>CC</td>
+						<td>
+							<a href="emp-input?id=1">修改</a>
+							&nbsp;
+							删除
+						</td>
+					</tr>
+         
+          修改后：
+					<tr>
+						<td><a id="loginname" href="">${loginName }</a></td> 
+						<td>${employeeName }</td>
+						
+						<td>${enabled == 1 ? '允许':'禁止' }</td>
+						<td>${department.departmentName }</td>
+						
+						<td>
+							<s:date name="birth" format="yyyy-MM-dd"/>
+						</td>
+						<td>${gender == 1 ? '男':'女' }</td>
+						
+						<td><a id="email" href="">${email }</a></td>
+						<td></td>
+						
+						<td>${visitedTimes }</td>
+						<td>${isDeleted == 1 ? '删除':'正常' }</td>
+						
+						<td>${roleNames }</td>
+						<td>
+							<a href="emp-input?id=${employeeId }">修改</a>
+							&nbsp;
+							<s:if test="isDeleted == 1">
+								删除
+							</s:if>
+							<s:else>
+								<a href="emp-delete?id=${employeeId }">删除</a>
+							</s:else>
+						</td>
+					</tr>     
+ 
+ 
+ 8.10  Run as  该工程，然后浏览器中输入   ： http://localhost:8080/EM/emp/list进行测试
+        得到异常：There is no Action mapped for namespace [/] and action name [list] associated 
+        with context path [/EM].
+        注意： ①. 默认情况下, 若验证文件的名字为 [ActionClassName]-validation.xml, 则该验证适用于 Action 的所有请求.
+         但不可能对于一个 Action
+的所有请求使用同样的验证规则, 可以考虑使用如下格式: [ActionClassName]-[actionName]-validation.xml              
+   因此可以：选中 EmployeeAction-validation.xml 按 F2 修改名字为：
+           EmployeeAction-emp-login-validation.xml
+           
+ 8.11 ruan as  测试运行一下;浏览器中输入：
+      http://localhost:8080/EM/emp-list 
+      出现异常：
+      /WEB-INF/pages/emps/list.jsp(89,5) According to TLD or attribute directive in tag file, attribute value does not accept any expressions         
+   找到 list.jsp 的 89行，即    <s:iterator value="${page.content }">
+      用struts2 标签，不用EL了，改为如下：   <s:iterator value="page.content">
+      
+8.12  ②. 页面显示级联属性时, 可能会出现懒加载异常. 因为默认情况下, Service 方法正常结束后, 即提交事务, 
+                  关闭 Session. 所以若 Dao 中
+                  没有初始化关联的属性, 页面上还显示该属性, 则可能就会出现懒加载异常. 可以在查询的时候, 把关联的属性都进行初始化. 
+     
+               对com.atguigu.ems.daos.EmployeeDao中：
+     
+     public List<Employee> getContent(Page<Employee> page){
+		int firstResult = (page.getPageNo() - 1) * page.getPageSize();
+		int maxResults = page.getPageSize();
+		
+		String hql = "FROM Employee e "
+				+ "LEFT OUTER JOIN FETCH e.department "
+				+ "LEFT OUTER JOIN FETCH e.roles ";
+		return getSession().createQuery(hql).setFirstResult(firstResult).setMaxResults(maxResults).list();
+	}
+     
+ 8.13     
+      ③. 页面上显示角色, 一个 Employee 实际上需要对应多个 Role. 所以只能显示角色名字的字符串, 多个角色的名字使用 , 进行分割. 
+
+      com.atguigu.ems.entities.Employee   中工具方法：
+      
+      //工具方法, 返回 role 的 name 的字符串
+	  public String getRoleNames(){
+		if(this.roles.size() > 0){
+			StringBuilder str = new StringBuilder();
+			
+			for(Role role: roles){
+				str.append(role.getRoleName())
+				   .append(",");
+			}
+			
+			str.replace(str.length() - 1, str.length(), "");
+			return str.toString();
+		}else{
+			return "";
+		}
+	  }
+      
+8.14  ④. 若在 URL 上恶意输入不合法的 pageNo, 则可能会导致结果显示异常:例如
+http://localhost:8080/ems-17/emp-list?pageNo=zz
+
+解决: 在com.atguigu.ems.actions.EmployeeAction的
+     setPageNo() 方法中传入 String 类型的参数!
+     
+public void setPageNo(String pageNo) {
+	this.pageNo = 1;
+	try {
+		this.pageNo = Integer.parseInt(pageNo);
+	} catch (NumberFormatException e) {}
+}     
+      
+      

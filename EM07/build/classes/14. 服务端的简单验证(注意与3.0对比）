@@ -1,0 +1,213 @@
+14. 服务端的简单验证:
+1). 若当前的表单也使用 Struts2 的简单验证, 则需要注意如下的两个问题:
+①. 和其他的针对于 EmployeeAction 请求的验证规则可能会不同, 所以需要编写不同的 validation 验证文件.
+验证文件的命名规则: [ActionClassName]-actionName-validation.xml
+②. 不同的验证规则, 不同的请求则验证失败后返回的页面也应该是不相同的. 即: 需要使用不同的 input 的 result!
+
+2). 注意: 若 input 对应的结果页面中有如下的需求: 从 request 中需要获取值在页面上显示, 则不能直接把 input 对应到 jsp 页面.
+因为若不经过 action, jsp 页面时没有办法来解析 request 中的属性值的.
+
+<result name="input">/WEB-INF/pages/emps/input.jsp</result>	
+
+<s:select list="#request.departments" 
+	listKey="departmentId" listValue="departmentName"
+	name="department.departmentId"></s:select>
+
+应该写成:
+
+<result name="input" type="chain">
+	<param name="actionName">emp-input</param>
+</result>
+
+3). 经过 chain 类型的结果后, 实际上在值栈中会有多个 Action 对象. 若再使用了 ModelDriven, 则值栈的结构为:
+
+EmployeeAction -> chain 类型的 result.
+Employee       -> ModelDriven
+EmployeeAction -> emp-save
+
+而 <s:fieldErrors /> 标签会优先从值栈栈顶对象来获取属性值, 栈顶的 EmployeeAction 中的 fieldErrors 属性值存在, 
+但为空. 所以不能正常显示错误的结果.
+
+解决方案: 把下面的 EmployeeAction 的 fieldErrors 属性值复制到上面的 EmployeeAction 的 fieldErrors 属性中.
+通过设置 chain 拦截器的 copyFieldErrors 属性值为 true 即可. 
+
+<interceptors>
+	<interceptor-stack name="emsStack">
+		<interceptor-ref name="paramsPrepareParamsStack">
+			<param name="chain.copyFieldErrors">true</param>
+			<param name="prepare.alwaysInvokePrepare">false</param>
+		</interceptor-ref>
+	</interceptor-stack>
+</interceptors>
+
+<default-interceptor-ref name="emsStack"></default-interceptor-ref>
+
+*********具体步骤************************************************************************************
+14.1 复制一份 EmployeeAction-emp-login-validation.xml改名字为 
+           EmployeeAction-emp-save-validation.xml验证文件。
+              删掉 <field name="password"><field>一栏，因为并不是所有的验证都要验证密码吗！！！这里不用验证密码
+14.2 在 /EM03/src/com/atguigu/ems/actions/EmployeeAction.java添加如下代码：
+     
+    //一定要写这个，要不然验证过不了，因为在值栈里面没有loginName，email等属性。 
+    public void prepareSave(){
+		model = new Employee();
+	}
+	
+	public String save(){
+		System.out.println("save...");
+		return "success";
+	}
+	
+	因为loginName我们在13.0已经验证过了，这里我们验证Emai算了：
+	把 <s:textfield id="email" name="email" cssClass="required email"></s:textfield>改回原来的：
+	<s:textfield name="email"></s:textfield>
+14.3 对  /EM03/src/com/atguigu/ems/actions/EmployeeAction-emp-save-validation.xml修改如下：
+
+<validators>
+    <field name="email">
+        <field-validator type="requiredstring" short-circuit="true">
+            <message key="requiredstring.email"/>
+        </field-validator>
+
+        <field-validator type="email" short-circuit="true">
+        	<message key="regex.email"></message>
+        </field-validator>
+    </field>
+</validators>
+
+14.4 在 i18n.properties中添加：
+requiredstring.email=Email\u4E0D\u80FD\u4E3A\u7A7A\uFF01
+regex.email=Email\u4E0D\u5408\u6CD5\uFF01
+
+假设现在即进行验证测试的话，点击提交时候，就回到 登录页面了。因为现在struts.xml中只有一个：
+<result name="input">/index.jsp</result>	
+
+14.5 在 struts.xml配置文件中的 <package></package>中添加
+       <action name="emp-save"
+			class="employeeAction"
+			method="save">
+			<result name="input">/WEB-INF/pages/emps/input.jsp</result>	
+		</action>
+		
+14.6 现在进行提交测试，会遇到如下的错误提示信息：
+     	tag 'select', field 'list', name 'department.departmentId': 
+     	The requested list key '#request.departments' could not be 
+     	resolved as a collection/array/map/enumeration/iterator type. 
+     	Example: people or people.{name}
+     	
+   这是因为：若 input 对应的结果页面中有如下的需求: 从 request 中需要获取值在页面上显示, 则不能直接把 input 对应到 jsp 页面.
+  因为若不经过 action, jsp 页面时没有办法来解析 request 中的属性值的.
+    struts.xml中：
+       <result name="input">/WEB-INF/pages/emps/input.jsp</result>	
+    
+    input.jsp中：
+   <s:select list="#request.departments" 
+	  listKey="departmentId" listValue="departmentName"
+	   name="department.departmentId"></s:select>
+	
+	struts.xml中应该写成:
+		<action name="emp-save"
+			class="employeeAction"
+			method="save">
+ 			<result name="input" type="chain">
+				<param name="actionName">emp-input</param>
+			</result>
+			<!-- <result name="input">/WEB-INF/pages/emps/input.jsp</result>	 -->
+		</action>  
+14.7 再对页面 进行提交测试，不再有 14.6的错误提示信息了。但是Email的错误提示消息还没出来！！！
+              我们在input.jsp的<body>中第一行加一个<s:debug></s:debug>刷新再测试一下，点一下提交,打开debug按钮:
+              值栈中有三个对象：
+栈顶：              EmployeeAction；这两项为空：  actionErrors	[]   errors	{}
+第二个对象：Employee
+弟三个对象：EmployeeAction：errors	{email=[Email不能为空！]}  fieldErrors	{email=[Email不能为空！]}
+
+如果此时在input.jsp的<body>中加入<s:property value="[1].fieldErrors"/>如下：
+	<p>
+		<label for="email">Email (必填)</label>
+		<s:textfield name="email"></s:textfield>
+		<label class="error" for="email" generated="true">
+		<!-- 显示服务器端简单验证的信息 -->
+			<s:fielderror fieldName="email"></s:fielderror>
+			<s:property value="[1].fieldErrors"/>
+		</label>
+	</p>
+可以显示一行非常丑陋的 提示信息： {email=[Email不能为空！]}
+  
+备注：   经过 chain 类型的结果后, 实际上在值栈中会有多个 Action 对象. 若再使用了 ModelDriven, 则值栈的结构为:
+
+EmployeeAction -> chain 类型的 result.
+Employee       -> ModelDriven
+EmployeeAction -> emp-save
+
+而 <s:fieldErrors /> 标签会优先从值栈栈顶对象来获取属性值, 栈顶的 EmployeeAction 中的 fieldErrors 属性值存在, 
+但为空. 所以不能正常显示错误的结果.   
+
+14.8  解决方案: 
+把下面的 EmployeeAction 的 fieldErrors 属性值复制到上面的 EmployeeAction 的 fieldErrors 属性中.
+通过设置 chain 拦截器的 copyFieldErrors 属性值为 true 即可. 
+
+<interceptors>
+	<interceptor-stack name="emsStack">
+		<interceptor-ref name="paramsPrepareParamsStack">
+			<param name="chain.copyFieldErrors">true</param>
+			<param name="prepare.alwaysInvokePrepare">false</param>
+		</interceptor-ref>
+	</interceptor-stack>
+</interceptors>
+
+<default-interceptor-ref name="emsStack"></default-interceptor-ref>  
+
+具体实施：
+1)打开/EM03/struts-default.xml文件：找到<interceptors>-------》name="chain"
+ -----》com.opensymphony.xwork2.interceptor.ChainingInterceptor
+ 然后 ctrl+shift+T：黏贴  com.opensymphony.xwork2.interceptor.ChainingInterceptor进搜索栏
+ Quick Access中搜索 Outline，并把Outline移动到左上角。
+ 右边菜单栏选中 ChainingInterceptor，可以在Outline中看到：属性copyFieldErrors : boolean
+ 要把这个属性设置为true就可以了。
+2) 在 struts.xml的 <package>中添加如下代码：
+
+		<interceptors>
+			<interceptor name="fileCleaner" class="com.atguigu.ems.interceptors.FileCleanerInterceptor"></interceptor>
+			<interceptor-stack name="emsStack">
+				<interceptor-ref name="fileCleaner"></interceptor-ref>
+				<interceptor-ref name="paramsPrepareParamsStack">
+					<param name="chain.copyFieldErrors">true</param>
+					<param name="prepare.alwaysInvokePrepare">false</param>
+				</interceptor-ref>
+			</interceptor-stack>
+		</interceptors>
+		
+		<default-interceptor-ref name="emsStack"></default-interceptor-ref>
+		
+备注：<interceptor-ref name="paramsPrepareParamsStack"></interceptor-stack>指向
+            在struts-default.xml中的一个 <interceptor-stack name="paramsPrepareParamsStack"></interceptor-stack>
+     
+            在struts-default.xml点开这个拦截器
+    <interceptor name="prepare" class="com.opensymphony.xwork2.interceptor.PrepareInterceptor"/>   
+             可以看到源码中有这个属性：
+    private boolean alwaysInvokePrepare = true;
+  
+           点开拦截器： <interceptor name="chain" class="com.opensymphony.xwork2.interceptor.ChainingInterceptor"/>
+          可以看到属性：
+    private boolean copyFieldErrors = false;
+    
+             这是指向我们自己设置的拦截器
+    <default-interceptor-ref name="emsStack"></default-interceptor-ref>
+    
+    
+3)重启服务器，刷新页面，输入loginName以及Emai然后提交，点开[Debug]按钮，可以看到栈顶
+ errors	{email=[Email不合法！]}
+fieldErrors	{email=[Email不合法！]}
+不再为空！！！！
+
+4)删掉<s:property value="[1].fieldErrors"/>，这行只是做实验用的，开发中不能这么用
+ 	<p>
+		<label for="email">Email (必填)</label>
+		<s:textfield name="email"></s:textfield>
+		<label class="error" for="email" generated="true">
+		<!-- 显示服务器端简单验证的信息 -->
+			<s:fielderror fieldName="email"></s:fielderror>
+			<s:property value="[1].fieldErrors"/>
+		</label>
+	</p>
+       

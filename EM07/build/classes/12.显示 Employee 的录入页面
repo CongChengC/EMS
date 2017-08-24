@@ -1,0 +1,589 @@
+12. 显示 Employee 的录入页面
+1). 在页面上需要显示所有的部门和角色
+2). 部门和角色需要放在二级缓存中
+
+3). 页面上:
+①. 使用 easyui 的 date 插件来显示日期
+②. 使用 weebox 插件来显示角色
+③. 表单必须使用 Struts2 的标签!
+④. 为了使 radio 的显示更正常, 去除了 raidomap.ftl 模板文件中的 label
+
+4). 使用 weebox: 参照文档来使用
+①. 选取的内容不回显. 解决: 用一组 checkbox 来保存选择的状态. 用另外一组来进行显示. 
+
+********具体实现步骤***************************************************************************
+12.1 新建力一个com.atguigu.ems.daos.RoleDao，代码如下：
+@Repository
+public class RoleDao {
+       
+	@Autowired
+	private SessionFactory sesionFactory;
+	
+	public Session getSession(){
+		return sesionFactory.getCurrentSession();
+	}
+	
+	public List<Role> getAll(){
+		String hql = "FROM Role r";
+		return getSession().createQuery(hql).list();
+	}
+	
+}
+
+12.2 在 com.atguigu.ems.daos.DepartmentDao，添加代码如下：
+	
+	public List<Department> getAll(){
+		String hql = "FROM Department d";
+		return getSession().createQuery(hql).list();
+	}
+     
+    备注： 我们发现，DepartmentDao与 RoleDao中都有
+    @Autowired
+	private SessionFactory sesionFactory;
+	
+	public Session getSession(){
+		return sesionFactory.getCurrentSession();
+	}
+	
+	getAll()方法也很相似，hql不一样 ，是否考虑代码重用。有一种方式叫做 QBC查询
+	缺点是不够灵活，但代码比较模块化
+	
+12.3 对12.1 与 12.2进行改写。
+12.3.1 RoleDao 改写为：
+@Repository
+public class RoleDao {
+       
+	@Autowired
+	private SessionFactory sesionFactory;
+	
+	public Session getSession(){
+		return sesionFactory.getCurrentSession();
+	}
+	
+	public Criteria getCriteria(){
+		return getSession().createCriteria(Role.class);
+	}
+	
+	public List<Role> getAll(){
+		return getCriteria().list();
+//		String hql = "FROM Role r";
+//		return getSession().createQuery(hql).list();
+	}
+	
+}
+
+12.3.2 DepartmentDao中把 12.2 中部分改写为。
+
+	public Criteria getCriteria(){
+		return getSession().createCriteria(Department.class);
+	}
+	
+	public List<Department> getAll(){
+		return getCriteria().setCacheable(true).list();
+//		String hql = "FROM Department d";
+//		return getSession().createQuery(hql).list();
+	}
+	
+备注： 希望可以被缓存，所以在 getCriteria()后面点加了 setCacheable(true)，如果不希望，可以不要点加这一项。
+
+12.4 新建一个 com.atguigu.ems.services.RoleService，代码如下：
+@Service 
+public class RoleService {
+       
+	@Autowired
+	private RoleDao roleDao;
+	
+	@Transactional(readOnly=true)
+	public List<Role> getAll(){
+		return roleDao.getAll();
+	}
+}
+
+12.5 新建一个 com.atguigu.ems.services.DepartmentService
+@Service 
+public class DepartmentService {
+       
+	@Autowired
+	private DepartmentDao departmentDao;
+	
+	@Transactional(readOnly=true)
+	public List<Department> getAll(){
+		return departmentDao.getAll();
+	}
+}
+
+12.6 在 com.atguigu.ems.test.ApplicationContextTest中进行测试，添加如下代码：
+	private DepartmentService departmentService = null;
+	private RoleService roleService = null;
+	在代码块大括号中添加
+	{
+		departmentService = ctx.getBean(DepartmentService.class);
+		roleService = ctx.getBean(RoleService.class);
+	}
+	
+	再添加 @Test方法，
+	@Test
+	public void testSecondLevelCache(){
+		departmentService.getAll();
+		departmentService.getAll();
+	}
+
+
+然后注意：注意需要在 /EM02/src/com/atguigu/ems/entities/Role.hbm.xml中设置
+     <cache usage="read-write"/>
+            需要在/EM02/src/com/atguigu/ems/entities/Department.hbm.xml中设置
+     <cache usage="read-write"/> 
+     
+           这是持久化类的映射文件进行配置，<!--cache标记需跟在class标记后-->
+	<cache usage="read-write"/>
+
+最后运行 @Test 方法。可以看到控制台中只发了一次 Hibernate:查询语句 
+
+12.7  这里提一小插曲：com.atguigu.ems.actions.EmployeeAction中 
+      	public Page<Employee> getPage(){
+		   return page;
+	    }
+	    
+	    你这个page没放在request里面，你怎么好用呢？因为我这个EmployeeAction中 在值栈里面，我可以直接
+	    来访问值栈里面的属性。但是现在对于 departments 和 roles必须往request里面放了！！！！！因此有下面的：12.8
+
+12.8 在类 EmployeeAction implement RequestAware接口：
+public class EmployeeAction extends ActionSupport 
+	implements ModelDriven<Employee>, Preparable, SessionAware, RequestAware{}
+	
+	实现的方法代码如下：
+	
+    private Map<String,Object> request;
+	
+	@Override
+	public void setRequest(Map<String, Object> arg0) {
+        this.request = arg0;		
+	}
+ 12.9 再在      com.atguigu.ems.actions.EmployeeAction中 添加如下代码：
+ 
+ 	@Autowired
+	private DepartmentService departmentService;
+	
+	@Autowired 
+	private RoleService roleService;
+	
+	public String input(){
+		request.put("roles", roleService.getAll());
+		request.put("departments", departmentService.getAll());
+		return "emp-input";
+	}
+	
+12.10.1 在 /EM02/conf/struts.xml中的 
+		<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+		</action>中添加：
+		
+      <result name="emp-input">/WEB-INF/pages/emps/input.jsp</result>
+      
+12.10.2     然后 新建input.jsp页面： /EM02/WebContent/WEB-INF/pages/emps/input.jsp	
+      在input.jsp中导入： <%@ include file="/commons/common.jsp" %>
+      
+12.10.3 在 /EM02/WebContent/WEB-INF/pages/emps/input.jsp中导入：
+
+<link rel="stylesheet" type="text/css" href="${ctp }/css/content.css">
+<link rel="stylesheet" type="text/css" href="${ctp }/css/input.css">
+<link rel="stylesheet" type="text/css" href="${ctp }/css/weebox.css">
+ 
+<link rel="stylesheet" type="text/css" href="${ctp}/script/themes/default/easyui.css">
+<link rel="stylesheet" type="text/css" href="${ctp}/script/themes/icon.css">
+<link rel="stylesheet" type="text/css" href="${ctp}/css/default.css">
+
+<script type="text/javascript" src="${ctp}/script/jquery-1.4.2.min.js"></script>
+<script type="text/javascript" src="${ctp}/script/jquery.validate.js"></script>
+
+<script type="text/javascript" src="${ctp}/script/jquery.easyui.min.js"></script>
+<script type="text/javascript" src="${ctp}/script/locale/easyui-lang-zh_CN.js"></script>
+
+<script type="text/javascript" src="${ctp}/script/messages_cn.js"></script>
+<script type="text/javascript" src="${ctp}/script/bgiframe.js"></script>
+<script type="text/javascript" src="${ctp}/script/weebox.js"></script>    
+
+12.10.4 把<body></body>粘贴进来。
+<body>
+	<br>
+	<s:form action="/emp-save" id="employeeForm" cssClass="employeeForm">
+		<s:if test="employeeId != null">
+		<input type="hidden" name="oldLoginName" 
+			id="oldLoginName" value="${param.oldLoginName == null ? requestScope.loginName : param.oldLoginName }"/>
+		<input type="hidden" name="id" value="${employeeId }"/>	
+		</s:if>
+		
+		<fieldset>
+			<p>
+				<label for="message">
+					<font color="red">添加员工信息</font>
+				</label> 
+			</p>
+			
+			<p>
+				<label for="loginName">登录名(必填)</label>
+				<s:textfield name="loginName" id="loginName" cssClass="required" minlength="6"></s:textfield>
+				<label id="loginlabel" class="error" for="loginname" generated="true">
+				<!-- 显示服务器端简单验证的信息 -->
+					
+				</label>
+			</p>
+			
+			<p>
+				<label for="employeeName">姓名 (必填)</label>
+				<s:textfield name="employeeName"></s:textfield>
+			</p>
+			
+			<p>
+				<label for="logingallow">登录许可 (必填)</label>
+				<s:radio list="#{'1':'允许','0':'禁止' }" name="enabled" cssStyle="border:none"></s:radio>
+			</p>
+
+			<p>
+				<label for="gender">性别 (必填)</label>
+				<s:radio list="#{'1':'男','0':'女' }" name="gender" cssStyle="border:none"></s:radio>
+			</p>
+			
+			<p>
+				<label for="dept">部门 (必填)</label>
+				<s:select list="#request.departments" 
+					listKey="departmentId" listValue="departmentName"
+					name="department.departmentId"></s:select>
+				<label class="error" for="dept" generated="true">
+				<font color="red">
+				<!-- 显示服务器端简单验证的信息 -->
+				</font>
+				</label>
+			</p>
+			
+			<p>
+				<label for="birth">生日 (必填)</label>
+				<s:textfield name="birth" 
+					cssClass="easyui-datebox"
+					data-options="formatter:myformatter,parser:myparser"></s:textfield>
+			</p>
+			
+			<p>
+				<label for="email">Email (必填)</label>
+				<s:textfield name="email"></s:textfield>
+				<label class="error" for="email" generated="true">
+				<!-- 显示服务器端简单验证的信息 -->
+					<s:fielderror fieldName="email"></s:fielderror>
+				</label>
+			</p>
+			
+			<p>
+				<label for="mobilePhone">电话 (必填)</label>
+				<s:textfield name="mobilePhone"></s:textfield>
+			</p>
+
+			<p>
+				<label for="role"><a id="role_a_id" href="">分配角色(必选)</a></label>
+			</p>
+			
+			<div style="display:none">
+				<!-- 有 name 属性的. 用来保存选中的状态 -->
+				<s:checkboxlist list="#request.roles"
+					listKey="roleId" listValue="roleName"
+					name="roles2"></s:checkboxlist>					
+			</div>
+			
+			<div style="display:none" id="rolebox"> 
+				<!-- 没有 name 属性的. 仅用来显示选择的状态 -->
+				<s:iterator value="#request.roles">
+					<input type="checkbox" value="${roleId}" style="border:none"/>${roleName }<br>
+				</s:iterator>
+			</div>
+			
+			<p>
+				<label for="mobilePhone">创建人</label>
+				<s:if test="employeeId == null">
+				${employee.loginName }
+				<input type="hidden" value="${sessionScope.employee.employeeId }" 
+					name="editor.employeeId"/>
+				</s:if>
+				<s:else>
+				${editor.loginName }
+				<input type="hidden" value="${editor.employeeId }" 
+					name="editor.employeeId"/>
+				</s:else>
+			</p>
+			
+			<p>
+				<input class="submit" type="submit" value="提交"/>
+			</p>
+				
+		</fieldset>
+	</s:form>
+</body>
+
+12.11 Run as 工程，然后登录，然后浏览器中输入： http://localhost:8080/EM02/emp-input看input.jsp页面效果如何！！
+   我们发现： 登录许可的  允许和 禁止；性别的男女 不显示比较丑：
+   右键 打开代码：
+   <label for="employeeForm_enabled1" style="border:none">允许</label>
+<input type="radio" name="enabled" id="employeeForm_enabled0" 
+value="0" style="border:none" style="border:none"/>
+<label for="employeeForm_enabled0" style="border:none">禁止</label>
+它偏要给我加了个比较恶心的东西！！！
+
+找到struts2-core-2.3.15.3.jar---》template.simple--》打开radiomap.ftl
+新建一个 /EM02/src/template/simple/radiomap.ftl文件，然后把上述radiomap.ftl源码包中的
+内容复制到所建立的 radiomap.ftl文件中。
+
+把文件中的  label 去掉
+<label for="${parameters.id?html}${itemKeyStr?html}"<#include "/${parameters.templateDir}/simple/css.ftl"/>><#rt/>
+    ${itemValue}<#t/>
+</label>
+
+即成为了：
+     ${itemValue}<#t/>    
+     
+刷新一下登录许可，和性别 选项栏这两行就变得很整齐了！！！！ 
+
+12.12  生日 (必填) 选项  ①. 使用 easyui 的 date 插件来显示日期
+1) startup.bat 启动服务器。
+2) D:\Program Files\apache-tomcat-6.0.43-windows-x86\apache-tomcat-6.0.43\webapps\jquery-easyui-1.3.5
+   jquery-easyui-1.3.5解压文件夹在 上面路径下
+3) 浏览器中输入： http://localhost:8080/jquery-easyui-1.3.5/
+4) 进入：http://localhost:8080/jquery-easyui-1.3.5/demo/datebox/basic.htm  就可以看到 日期的例子了
+5) 我们选择 http://localhost:8080/jquery-easyui-1.3.5/demo/datebox/dateformat.html中的第二个例子
+这是 核心代码行： <input class="easyui-datebox" data-options="formatter:myformatter,parser:myparser"></input>
+
+我们把 核心代码行中关键内容放到： 
+			<p>
+				<label for="birth">生日 (必填)</label>
+				<s:textfield name="birth" 
+					cssClass="easyui-datebox"
+					data-options="formatter:myformatter,parser:myparser"></s:textfield>
+			</p>
+
+在 把例子中的两个函数直接拷贝到input.jsp中
+
+	<script type="text/javascript">
+		function myformatter(date){
+			var y = date.getFullYear();
+			var m = date.getMonth()+1;
+			var d = date.getDate();
+			return y+'-'+(m<10?('0'+m):m)+'-'+(d<10?('0'+d):d);
+		}
+		function myparser(s){
+			if (!s) return new Date();
+			var ss = (s.split('-'));
+			var y = parseInt(ss[0],10);
+			var m = parseInt(ss[1],10);
+			var d = parseInt(ss[2],10);
+			if (!isNaN(y) && !isNaN(m) && !isNaN(d)){
+				return new Date(y,m-1,d);
+			} else {
+				return new Date();
+			}
+		}
+	</script> 
+启动eclipse中服务器，然后查看页面看效果如何，可以选择日期了！！
+
+12.13.0 ②. 使用 weebox 插件来显示角色
+<body></body>中的角色代码如下（角色隐藏了）：
+			
+			<p>
+				<label for="role"><a id="role_a_id" href="">分配角色(必选)</a></label>
+			</p>
+			
+			<div style="display:none">
+				<!-- 有 name 属性的. 用来保存选中的状态 -->
+				<s:checkboxlist list="#request.roles"
+					listKey="roleId" listValue="roleName"
+					name="roles2"></s:checkboxlist>					
+			</div>
+			
+			<div style="display:none" id="rolebox"> 
+				<!-- 没有 name 属性的. 仅用来显示选择的状态 -->
+				<s:iterator value="#request.roles">
+					<input type="checkbox" value="${roleId}" style="border:none"/>${roleName }<br>
+				</s:iterator>
+			</div>
+
+
+12.13.1
+打开： OpenSource\OpenSource2\weebox
+打开： file:///D:/MYNOTE/BIGDATA/OpenSource/OpenSource2/weebox/demo/weebox.html
+里面有一些例子，例子下面下着代码
+我们用最复杂的例子： 打开、确定、取消、关闭的事件演示[id=test3]
+
+在<script type="text/javascript">  </script> 中写入如下代码：
+
+        $(function(){
+        	$("#role_a_id").click(function(){
+        		
+        		return false;
+        	});
+        })
+        
+12.13.2然后把 weebox.html例子中代码粘贴到上面的 function函数中，代码如下：
+
+$(function(){
+        	$("#role_a_id").click(function(){
+        			$.weeboxs.open('弹窗事件测试？', {
+        				title:'提示',
+        				onopen:function() {
+        					alert('取得内容后，显示弹窗前。');
+        				},
+        				onok:function(){
+        					alert('点击确定按钮后!');
+        					box.close();//增加事件方法后需手动关闭弹窗
+        				},
+        				oncancel:function(){
+        					alert('点击取消按钮后！');
+        					box.close();//增加事件方法后需手动关闭弹窗
+        				},
+        				onclose:function(){
+        					alert('弹窗关闭前');
+        				}
+        			});
+        		return false;
+        	});
+        })
+12.13.3 刷新页面，然后点击页面的  分配角色(必选)按钮，进行测试，就可以弹出东西来了！！！但我们需要改写
+        click(function(){}函数中的内容，弹性我们需要的提示内容信息！！！
+                        去掉 oncancel和onclose函数；改掉title提示信息内容 
+        onok:function()中加了个 box，要不然点确定没反应，关不了
+                        我们看到例子中使用jQuery的选择器为弹窗提供内容。所以我们的窗体中使用选择器#rolebox！！！
+        
+        $(function(){
+        	$("#role_a_id").click(function(){
+        		//实际上窗体可以使用选择器	
+        		$.weeboxs.open('#rolebox', {
+        				title:'分配角色',
+        				//weebox 窗口打开时将要触发的事件
+        				onopen:function() {
+        				},
+        				//点击 OK 按钮时将要触发的事件
+        				onok:function(box){
+        					box.close();//增加事件方法后需手动关闭弹窗
+        				},
+        			});
+        		return false;
+        	});
+        })
+  刷新页面测试一下，可以看到点击  分配角色(必选)按钮 时候可以弹出窗口了！！！但比较郁闷的是，你选两个，然后点击确认，不能回显啊！！！！
+ 
+ 12.14  4). 使用 weebox: 参照文档来使用
+    选取的内容不回显. 解决: 用一组 checkbox 来保存选择的状态. 用另外一组来进行显示. 
+    
+ 分析：刷新页面，然后浏览器中输入：http://localhost:8080/EM02/emp-input
+ 打开  F12 键，在页面的 Emlment中，然后在<body>中，然后在 <form>中可以找到如下的两栏：点击页面中的  分配角色(必选)
+ 
+<div style="display:none">
+	<!-- 有 name 属性的. 用来保存选中的状态 -->
+<input type="checkbox" name="roles2" value="1" id="roles2-1">
+<label for="roles2-1" class="checkboxLabel">管理员</label>
+<input type="checkbox" name="roles2" value="2" id="roles2-2">
+<label for="roles2-2" class="checkboxLabel">讲师</label>
+<input type="checkbox" name="roles2" value="4" id="roles2-3">
+<label for="roles2-3" class="checkboxLabel">班主任</label>
+<input type="checkbox" name="roles2" value="6" id="roles2-4">
+<label for="roles2-4" class="checkboxLabel">ABCDE</label>
+<input type="checkbox" name="roles2" value="9" id="roles2-5">
+<label for="roles2-5" class="checkboxLabel">CC</label>
+<input type="checkbox" name="roles2" value="10" id="roles2-6">
+<label for="roles2-6" class="checkboxLabel">AAAA</label>
+<input type="hidden" id="__multiselect_employeeForm_roles2" name="__multiselect_roles2" value="">					
+			</div>
+<div style="display:none" id="rolebox"> 
+	<!-- 没有 name 属性的. 仅用来显示选择的状态 -->
+
+	<input type="checkbox" value="1" style="border:none">管理员<br>
+
+	<input type="checkbox" value="2" style="border:none">讲师<br>
+
+	<input type="checkbox" value="4" style="border:none">班主任<br>
+
+	<input type="checkbox" value="6" style="border:none">ABCDE<br>
+
+	<input type="checkbox" value="9" style="border:none">CC<br>
+
+	<input type="checkbox" value="10" style="border:none">AAAA<br>
+				
+</div>
+ ***************************************************************************** 
+ 把 onok:function(box){}中内容修改为如下：
+ 
+	onok:function(box){
+		$(":checkbox[name !='roles2']").each(function(index){
+			var checked = $(this).is(":checked");
+			alert(index+":"+checked);
+		}) 
+		
+		box.close();//增加事件方法后需手动关闭弹窗
+	}
+刷新页面，然后点击分配角色按钮，然后点选几个角色，按确定，按ok，就可以看到 0,1,2,3,4,5，而且后面带个false或true。。。似乎遍历了一下吗
+
+12.14.1  把 onok:function(box){}函数中内容进一步修改如下：
+			
+			onok:function(box){
+				//没有name属性的
+				$(":checkbox[name !='roles2']").each(function(index){
+					var checked = $(this).is(":checked");
+					//有name属性的$(":checkbox[name ='roles2']")是个数组，后面加[index]是个元素，外面加
+					//$然后{}是一个jQuery对象;"checked"属性是checked
+					$($(":checkbox[name ='roles2']")[index]).attr("checked", checked);
+				}) 
+				
+				box.close();//增加事件方法后需手动关闭弹窗
+			},
+			
+12.14.2 把 如下代码复制到 onopen:function() {}函数中。
+		$(":checkbox[name !='roles2']").each(function(index){
+			var checked = $(this).is(":checked");
+			//有name属性的$(":checkbox[name ='roles2']")是个数组，后面加[index]是个元素，外面加
+			//$然后{}是一个jQuery对象;"checked"属性是checked
+			$($(":checkbox[name ='roles2']")[index]).attr("checked", checked);
+		}) 	
+		
+		做如下修改：
+		//读取选中的状态
+		onopen:function() {
+			//有name属性
+			$(":checkbox[name ='roles2']").each(function(index){
+				var checked = $(this).is(":checked");
+				//无name属性的$(":checkbox[name !='roles2']")是个数组，后面加[index]是个元素，外面加
+				//$然后{}是一个jQuery对象;"checked"属性是checked
+				$($(":checkbox[name !='roles2']")[index]).attr("checked", checked);
+			}) 
+		},	
+		
+		最终修改的代码如下：
+$("#role_a_id").click(function(){
+		//实际上窗体可以使用选择器
+		$.weeboxs.open('#rolebox', {
+			title:'分配角色', //title
+			//weebox 窗口打开时需要触发的时间
+			//读取选中的状态
+			//有name属性是保存的
+			//有name属性的$(":checkbox[name ='roles2']")是个数组，后面加[index]是个元素，外面加
+			//$然后{}是一个jQuery对象;"checked"属性是checked
+			onopen:function() {
+				$(":checkbox[name='roles2']").each(function(index){
+					var checked = $(this).is(":checked");
+					$($(":checkbox[name!='roles2']")[index]).attr("checked", checked);
+				})
+			},
+			//点击 OK 按钮时将要触发的事件
+			//保存选择的状态. 有 name 属性的是保存的, 即用于提交表单的. 而没有 name 属性的是用来显示的.
+			//jQuery 的 each 函数中如果加入 index, 则 index 表示索引
+			//没有name属性的是用来显示的
+			//有name属性的$(":checkbox[name ='roles2']")是个数组，后面加[index]是个元素，外面加
+			//$然后{}是一个jQuery对象;"checked"属性是checked
+			onok:function(box){
+				$(":checkbox[name!='roles2']").each(function(index){
+					var checked = $(this).is(":checked");
+					$($(":checkbox[name='roles2']")[index]).attr("checked", checked);
+				})
+				box.close();//增加事件方法后需手动关闭弹窗
+			}
+		});
+		return false;
+});		
+
+刷新页面，然后点击角色分配，然后选择几个角色，再点击确认，然后再次点击角色分配，可以看到上次选的角色可以回显了。
+			

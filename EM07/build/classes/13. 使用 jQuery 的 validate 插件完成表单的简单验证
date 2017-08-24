@@ -1,0 +1,64 @@
+14. 使用 jQuery 的 validate 插件完成表单的简单验证.
+ 直接参照 jquery-validate\demo\index.html 即可.
+ 
+ 具体步骤：********************************************
+ 14.1 打开： OpenSource/OpenSource2/jquery-validate/demo/index.html
+ 点一下例子中的 submit，就可以显示错误消息。右键可以看到代码。
+      查看例子中有：
+    // validate the comment form when it is submitted
+	$("#commentForm").validate();
+ 14.2 仿照14.1 在/EM03/WebContent/WEB-INF/pages/emps/input.jsp的 $(function(){}函数中加入
+      下面这句代码，只是说表单employeeForm需要验证，但对那些字段需要验证，以及需要哪些验证规则没说
+      	
+      	//完成 jQuery 的 validate 验证
+		$("#employeeForm").validate();
+14.3 在例子的 id为 commentForm"的form表单中有如下规则：
+     	<p>
+			<label for="cname">Name (required, at least 2 characters)</label>
+			<input id="cname" name="name" class="required" minlength="2" />
+		<p>
+		
+14.4  我们在 自己的form表单employeeForm中，也可以仿照上面例子：只是我们自己的是struts2标签，我们用得有点忐忑
+            <p>
+				<label for="loginName">登录名(必填)</label>
+				<s:textfield name="loginName" id="loginName" cssClass="required" minlength="6"></s:textfield>
+				<label id="loginlabel" class="error" for="loginname" generated="true">
+				<!-- 显示服务器端简单验证的信息 -->
+					
+				</label>
+			</p>
+			
+14.5 我们run as 一下工程，然后浏览器中输入：http://localhost:8080/EM03/emp-input
+               什么都不输入，点提交。会在登录名一栏弹出“必选字段”；我们写一个字符长度小于6的登录名，点提交，也会弹出
+     “ 请输入一个长度最少是 6 的字符串”
+    注意： input.jsp中需要有  <script type="text/javascript" src="${ctp}/script/messages_cn.js"></script>
+    这里的验证才能弹出中文的验证提示信息。
+    
+14.6 再看一个 Email例子
+       <p>
+			<label for="cemail">E-Mail (required)</label>
+			<input id="cemail" name="email" class="required email" />
+		</p>  
+	我们自己的原来是这样：
+	    	<p>
+				<label for="email">Email (必填)</label>
+				<s:textfield name="email"></s:textfield>
+				<label class="error" for="email" generated="true">
+				<!-- 显示服务器端简单验证的信息 -->
+					<s:fielderror fieldName="email"></s:fielderror>
+				</label>
+			</p>
+	改成这样：        
+	      <p>
+				<label for="email">Email (必填)</label>
+				<s:textfield id="email" name="email" cssClass="required email"></s:textfield>
+				<label class="error" for="email" generated="true">
+				<!-- 显示服务器端简单验证的信息 -->
+					<s:fielderror fieldName="email"></s:fielderror>
+				</label>
+			</p>
+	测试： 浏览器中输入：http://localhost:8080/EM03/emp-input
+	我们在 Emai一栏输入一个错误的emai格式，就会弹出"请输入正确格式的Email"
+	
+	
+                          

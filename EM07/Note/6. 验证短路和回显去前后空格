@@ -1,0 +1,111 @@
+6. 问题:
+1). 对验证添加 "短路" 属性: <field-validator type="stringlength" short-circuit="true">
+在 EmployeeAction-validation.xml的每一个 field-validator 中都加一个  short-circuit="true"就可以实现短路了
+
+2). 服务端的简单验证后, 数据回显时, 不会自动的去除前后空格.
+①. 在 setter 方法中, 调用参数的 trim() 方法, 去除参数的前后空格. 但较为麻烦.
+把Employee中的 
+
+	public void setLoginName(String loginName) {
+		this.loginName = loginName;
+	}
+改写成
+
+	public void setLoginName(String loginName) {
+		if(loginName !=null){
+		   loginName = loginName.trim();
+		}
+		this.loginName = loginName;
+	}
+上面这个方法简单粗暴
+
+②. 可以在 ParametersInterceptor 的 318 行对值栈中属性赋值之前, 把前后空格去除. 具体参看修改后的 318 行
+
+2.1 在 
+	public void setLoginName(String loginName) {
+		this.loginName = loginName;
+	}
+的   this.loginName = loginName; 打上一个断点，看它之前什么时候调用该方法。
+
+2.2  在登陆页面登陆名中输入一些字母，然后字母前面加入一些空格，然后随意输入一些数字到密码一栏，在Debug条件下点击登陆
+找到  ParametersInterceptor.setParameters(Object, ValueStack, Map<String,Object>) line: 318	
+一行，然后关联源码包 struts-2.3.15.3-all.zip。
+
+2.3 在 318行 可以看到                  newStack.setParameter(name, value);
+点其中的value可以看到我们在页面上输入的        前面带空格的登陆用户名
+如果我们在 318 行之前把 空格去掉，就可以满足要求了。
+
+2.4 在本地新建一个包  com.opensymphony.xwork2.interceptor 就是点击源码时候 ParametersInterceptor类对应的包名
+在该包中本地建立一个类，即 ParametersInterceptor
+然后把源码包中的  ParametersInterceptor 类里面全部内容复制到 本地所建立的 ParametersInterceptor 中
+然后在 318行的  
+try {
+    newStack.setParameter(name, value);
+} catch (RuntimeException e) {。。。。。。}
+
+修改成如下内容进行去除空格
+
+            try {
+            	
+            	//判断 value 是否为 String[] 类型.
+            	if(value != null && value instanceof String[]){
+            		//若 value 是 String[] 类型, 则把数组中的每一个元素都去除前后空格.
+            		List<String> strList = new ArrayList<>();
+            		String [] strs = (String[]) value;
+            		for(String str: strs){
+            			str = str.trim();
+            			strList.add(str);
+            		}
+            		//再更新 value 值. 
+            		value = strList.toArray(new String[strList.size()]);
+            	}
+            	
+                newStack.setParameter(name, value);
+            } catch (RuntimeException e) {。。。。。。}
+2.5 可以在 com.atguigu.ems.test中建立一个类 EmsTest代码如下进行测试这样的处理是否有效。
+下面是测试的@Test代码：
+
+@Test
+	public void testStringArray() {
+		
+		String[] value = new String[] { "  aaaaaa  ", "  bbccccc  " };
+		
+		//输出来看一看
+		for (String val : value) {
+			System.out.println("没去空格时候：--" + val + "--");
+		}
+		
+		
+    	//判断 value 是否为 String[] 类型.
+    	if(value != null && value instanceof String[]){
+    		//若 value 是 String[] 类型, 则把数组中的每一个元素都去除前后空格.
+    		List<String> strList = new ArrayList<>();
+    		String [] strs = (String[]) value;
+    		for(String str: strs){
+    			str = str.trim();
+    			strList.add(str);
+    		}
+    		
+    		//输出来看一看
+    		System.out.println("去了空格数组是长这样："+strList);
+    		
+    		//再更新 value 值. 
+    		value = strList.toArray(new String[strList.size()]);
+    		
+    		//输出来看一看
+    		for (String val : value) {
+    			System.out.println("去了空格后：--" + val + "--");
+    		}
+    		
+    	}
+		
+}
+
+这是测试的去除空格输出结果：
+没去空格时候：--  aaaaaa  --
+没去空格时候：--  bbccccc  --
+去了空格数组是长这样：[aaaaaa, bbccccc]
+去了空格后：--aaaaaa--
+去了空格后：--bbccccc--
+
+

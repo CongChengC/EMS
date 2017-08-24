@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:security="http://www.springframework.org/schema/security"
+	xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.1.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<bean id="filterInvocationSecurityMetadataSource"
+		class="org.springframework.security.web.access.intercept.DefaultFilterInvocationSecurityMetadataSource">
+		<constructor-arg>
+			<bean factory-bean="filterInvocationSecurityMetadataSourceRequestMapBuilder" 
+				factory-method="buildRequestMap"></bean>
+		</constructor-arg>	
+	</bean>
+	
+	<security:http auto-config="true">
+		
+		<!-- 仅仅测试用 -->
+		<!-- <security:intercept-url pattern="/emp-list" access="ROLE_EMP_LIST"/> -->
+		
+		<!-- 配置登陆相关 -->
+		<security:form-login
+			login-page="/index.jsp"
+			login-processing-url="/security-login"
+			username-parameter="loginName"
+			password-parameter="password"
+			
+			authentication-failure-url="/index.jsp"
+			
+			default-target-url="/login-success"
+			always-use-default-target="true"
+			
+			authentication-success-handler-ref="emsAuthenticationSuccessHandler"
+			authentication-failure-handler-ref="emsAuthenticationFailureHandler"
+			/>
+			
+		<!-- 配置登出 -->	
+		<security:logout
+			logout-url="/security-logout"
+			logout-success-url="/index.jsp"
+			/>
+		
+	</security:http>
+	
+	<!-- 配置自定义的认证 -->
+	<security:authentication-manager>
+		<security:authentication-provider user-service-ref="emsUserDetailsService">
+			<security:password-encoder hash="md5">
+				<security:salt-source user-property="username"/>
+			</security:password-encoder>
+		</security:authentication-provider>
+	</security:authentication-manager>
+
+</beans>

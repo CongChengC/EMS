@@ -1,0 +1,330 @@
+10. 通过 js 实现输入页码之后的直接分页.
+1). js 代码
+2). 如何把目前的代码得以重用. 
+**********************************
+具体实现：
+10.1
+在9.16.5的基础之上：
+
+下面为 body中 与 head中对应的 代码
+*****************************************
+	<span id="pagelist">
+		转到 <input type="text" name="pageNo" size="1" height="1" class="logintxt"/> 页
+	</span>
+
+*****************************************
+对 /EM02/WebContent/WEB-INF/pages/emps/list2.jsp，在核心函数
+$(function(){})中添加如下代码：
+
+        //通过 js 实现输入页码之后的直接分页.
+		$(".logintxt").change(function(){
+			//1.得到输入页码的value值
+			var val = this.value;
+			val = $.trim(val);
+			
+			//2.对value值进行校验：输入的是否为一个数字，输入的页码是否在合适的范围之内
+			var reg = /^d+$/;
+			if(!reg.test(val)){
+				alert("输入的页码不合法");
+				this.value="";
+				return;
+			}
+			
+		});
+
+Run as 一下，然后浏览器中输入：http://localhost:8080/EM/emp-list
+在页码输入框中输入一个，比如 aaa，112w。。。等非法页码，能弹出“输入的页码不合法”。
+
+10.2，继续修改代码对页面范围进行校验：
+
+//通过 js 实现输入页码之后的直接分页.
+		$(".logintxt").change(function(){
+			//1.得到输入页码的value值
+			var val = this.value;
+			val = $.trim(val);
+			
+			//2.对value值进行校验：输入的是否为一个数字，输入的页码是否在合适的范围之内
+			var reg = /^d+$/;
+			if(!reg.test(val)){
+				alert("输入的页码不合法");
+				this.value="";
+				return;
+			}
+			
+			//parseInt是js自带的一个函数，可以把字符串转换为一个数值。
+			var pageNo = parseInt(val);
+			if(pageNo <1 || pageNo > parseInt("${page.totalPages}")){
+				alert("输入的页码不合法");
+				this.value="";
+				return;
+			}
+			
+			//3.ajax分页。
+		});
+		
+Run as 一下，然后浏览器中输入：http://localhost:8080/EM/emp-list
+在页码输入框中输入一个，比如 -1或 1000。。。等不在范围页码，能弹出“输入的页码不合法”。
+
+10.3 //3.ajax分页。
+你怎么重复利用原来 list2.jsp 中 click(function(){}里面的内容。
+
+因为该函数中有 var pageNo = $(this).next(":hidden").val();
+那个this是a节点，利用时候会有问题。因此，只能利用该函数里面的部分代码，并把它
+写为一个方法。
+
+         function turnPage(url,args){
+			$.post(url, args, function(data){
+				//3. 使用 jQuery 和 javascript 更新页面的内容
+				//3.1 更新: .pagebanner
+				$(".pagebanner").html("共" + data.totalElements + "条记录"
+						+ "&nbsp;&nbsp;"
+						+ "共" + data.totalPages + "页"
+						+ "&nbsp;&nbsp;"
+						+ "当前第" + data.pageNo + "页");	
+				//3.2 更新: .pagelinks
+				if(data.pageNo == 1){
+					$("#prevPageLinks").hide();
+				}else{
+					$("#prevPageLinks").show();
+				}
+				//关于 nextPageLinks 待实现。 
+				if(data.pageNo == data.totalPages){
+					$("#nextPageLinks").hide();
+				}else{
+					$("#nextPageLinks").show();
+				}
+				
+				//3.3 更新隐藏域中的 value 值
+				$("#prevPageNoVal").val(data.prev);
+				$("#nextPageNoVal").val(data.next);
+				
+				//3.4 更新 table 中 tbody 的内容. 
+				var $tbody = $("table tbody");
+				$tbody.empty();
+				
+				for( i=0; i<data.content.length;i++){
+					var item = data.content[i];
+					
+					var $tr = $("<tr></tr?");
+					$tr.append("<td><a>"+item.loginName +"</a></td>");
+					$tr.append("<td>" + item.employeeName + "</td>");
+					
+					$tr.append("<td>" + (item.enabled == 1 ? '允许':'禁止') + "</td>");
+					$tr.append("<td>" + item.departmentName + "</td>");
+					
+					$tr.append("<td>" + item.displayBirth + "</td>");
+					$tr.append("<td>" + (item.gender == 1 ? '男':'女') + "</td>");
+					
+					$tr.append("<td>" + item.email + "</td>");
+					$tr.append("<td>" + (item.mobilePhone == null ? "" : item.mobilePhone) + "</td>");
+					
+					$tr.append("<td>" + item.visitedTimes + "</td>");
+					$tr.append("<td>" + (item.isDeleted == 1 ? '删除':'正常') + "</td>");
+					
+					$tr.append("<td>" + item.roleNames + "</td>");
+					
+					
+					var $td = $("<td></td>");
+					$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+					
+					if(item.isDeleted == 1){
+						$td.append("&nbsp;&nbsp;删除")
+					}else{
+						$td.append("&nbsp;&nbsp;");
+						var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+						$deleteANode.click(function(){
+							deleteTr(this);				
+							return false;
+						});
+						$td.append($deleteANode);
+						$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+					}
+					
+					$tr.append($td);
+					
+					$tbody.append($tr);
+				}
+				
+			},"json");
+		}
+
+10.3.1 把该部分代码提取出来之后，再对原来 “上一页，下一页，首页，末页”的操作调用该方法，测试一下是否可用：
+                      调用方法如下：
+       
+       $(".pagelinks a").click(function(){
+			//1. 准备 Ajax 请求
+			var url = "${ctp}/emp-list2";
+			var pageNo = $(this).next(":hidden").val();
+			var args = {"pageNo":pageNo,"time":new Date()};
+			
+			//2. 发送 Ajax 请求
+			turnPage(url,args);
+			
+			return false;
+		});                    
+刷新页面，然后按  “上一页，下一页，首页，末页”看调用提取方法是否可用。
+
+10.3.2 测试  提取方法成功后，对 "通过 js 实现输入页码之后的直接分页."
+也掉用该方法 turnPage(url,args)，加以测试：
+
+        //通过 js 实现输入页码之后的直接分页.
+		$(".logintxt").change(function(){
+			//1.得到输入页码的value值
+			var val = this.value;
+			val = $.trim(val);
+			
+			//2. 对 value 值进行校验: 输入的是否为一个数字, 页码是否在合法的范围内
+			var reg = /^\d+$/;
+			if(!reg.test(val)){
+				alert("输入的页码不合法!");
+				this.value = "";
+				return;
+			}
+			//parseInt 是 js 中自带的一个函数: 可以把字符串转为一个数值
+			var pageNo = parseInt(val);
+			if(pageNo < 1 || pageNo > parseInt("${page.totalPages}")){
+				alert("输入的页码不合法!");
+				this.value = "";
+				return;
+			}
+			
+			//3.Ajax分页
+			var url = "${ctp}/emp-list2";
+			var args = {"pageNo":pageNo,"time":new Date()};
+			turnPage(url,args);
+			
+		});
+		
+刷新页面，然后输入页面加以测试，看是否能正确到达指定页码。
+*******************************************************************************************
+最终代码如下：
+<script type="text/javascript">
+	$(function(){
+		//若当前页面是第一页, 则隐藏 prevPageLinks
+		if("${page.pageNo}" == "1"){
+			$("#prevPageLinks").hide();
+		}
+		//若当前页面是最后一页, 则隐藏 nextPageLinks
+		//自己完成
+		if("${page.pageNo}" == "${page.totalPages}"){
+			$("#nextPageLinks").hide();
+		}
+		
+		function turnPage(url,args){
+			$.post(url, args, function(data){
+				//3. 使用 jQuery 和 javascript 更新页面的内容
+				//3.1 更新: .pagebanner
+				$(".pagebanner").html("共" + data.totalElements + "条记录"
+						+ "&nbsp;&nbsp;"
+						+ "共" + data.totalPages + "页"
+						+ "&nbsp;&nbsp;"
+						+ "当前第" + data.pageNo + "页");	
+				//3.2 更新: .pagelinks
+				if(data.pageNo == 1){
+					$("#prevPageLinks").hide();
+				}else{
+					$("#prevPageLinks").show();
+				}
+				//关于 nextPageLinks 待实现。 
+				if(data.pageNo == data.totalPages){
+					$("#nextPageLinks").hide();
+				}else{
+					$("#nextPageLinks").show();
+				}
+				
+				//3.3 更新隐藏域中的 value 值
+				$("#prevPageNoVal").val(data.prev);
+				$("#nextPageNoVal").val(data.next);
+				
+				//3.4 更新 table 中 tbody 的内容. 
+				var $tbody = $("table tbody");
+				$tbody.empty();
+				
+				for( i=0; i<data.content.length;i++){
+					var item = data.content[i];
+					
+					var $tr = $("<tr></tr?");
+					$tr.append("<td><a>"+item.loginName +"</a></td>");
+					$tr.append("<td>" + item.employeeName + "</td>");
+					
+					$tr.append("<td>" + (item.enabled == 1 ? '允许':'禁止') + "</td>");
+					$tr.append("<td>" + item.departmentName + "</td>");
+					
+					$tr.append("<td>" + item.displayBirth + "</td>");
+					$tr.append("<td>" + (item.gender == 1 ? '男':'女') + "</td>");
+					
+					$tr.append("<td>" + item.email + "</td>");
+					$tr.append("<td>" + (item.mobilePhone == null ? "" : item.mobilePhone) + "</td>");
+					
+					$tr.append("<td>" + item.visitedTimes + "</td>");
+					$tr.append("<td>" + (item.isDeleted == 1 ? '删除':'正常') + "</td>");
+					
+					$tr.append("<td>" + item.roleNames + "</td>");
+					
+					
+					var $td = $("<td></td>");
+					$td.append("<a href='emp-input?id=" + item.employeeId + "'>修改</a>");
+					
+					if(item.isDeleted == 1){
+						$td.append("&nbsp;&nbsp;删除")
+					}else{
+						$td.append("&nbsp;&nbsp;");
+						var $deleteANode = $("<a href='emp-delete?id=" + item.employeeId + "'>删除</a>");
+						$deleteANode.click(function(){
+							deleteTr(this);				
+							return false;
+						});
+						$td.append($deleteANode);
+						$td.append("<input type='hidden' value='" + item.loginName + "'/>");
+					}
+					
+					$tr.append($td);
+					
+					$tbody.append($tr);
+				}
+				
+			},"json");
+		}
+		
+		
+		//通过 js 实现输入页码之后的直接分页.
+		$(".logintxt").change(function(){
+			//1.得到输入页码的value值
+			var val = this.value;
+			val = $.trim(val);
+			
+			//2. 对 value 值进行校验: 输入的是否为一个数字, 页码是否在合法的范围内
+			var reg = /^\d+$/;
+			if(!reg.test(val)){
+				alert("输入的页码不合法!");
+				this.value = "";
+				return;
+			}
+			//parseInt 是 js 中自带的一个函数: 可以把字符串转为一个数值
+			var pageNo = parseInt(val);
+			if(pageNo < 1 || pageNo > parseInt("${page.totalPages}")){
+				alert("输入的页码不合法!");
+				this.value = "";
+				return;
+			}
+			
+			//3.Ajax分页
+			var url = "${ctp}/emp-list2";
+			var args = {"pageNo":pageNo,"time":new Date()};
+			turnPage(url,args);
+			
+		});
+		
+		$(".pagelinks a").click(function(){
+			//1. 准备 Ajax 请求
+			var url = "${ctp}/emp-list2";
+			var pageNo = $(this).next(":hidden").val();
+			var args = {"pageNo":pageNo,"time":new Date()};
+			
+			//2. 发送 Ajax 请求
+			turnPage(url,args);
+			
+			return false;
+		});
+	})
+</script>

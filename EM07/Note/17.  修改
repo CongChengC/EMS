@@ -1,0 +1,260 @@
+17. 修改:
+1). 显示修改的页面
+①. Struts2 表单回显的原理: 从值栈中读取对应的属性到响应的表单标签中. 
+②. 可以正常回显: department. 因为在 Employee 所对应的数据表中有 department 的 id. 所以获取的 Employee 的 department
+有 id 属性. 但无法获取 department 的其他属性.
+③. "创建人" 需要额外的编辑一下:
+<s:if test="employeeId == null">
+${employee.loginName }
+<input type="hidden" value="${sessionScope.employee.employeeId }" 
+	name="editor.employeeId"/>
+</s:if>
+<s:else>
+${employee.editor.loginName }
+<input type="hidden" value="${editor.employeeId }" 
+	name="editor.employeeId"/>
+</s:else>
+此时 editor 不能被正常显示. 因为获取了除了 id 的其他属性. 
+
+解决: 需要在 Service 方法结束前初始化关联的对象 OR 使 Session 的打开时间变得长一点. 
+	> Service 方法结束前初始化所有的属性: 较为麻烦. [建议] 
+		>> Dao 中直接进行左外连接查询. 好处: 简单, 但 Dao 的方法不能被重用. 
+		调用 Hibernate.initialize 方法可以初始化代理对象.
+		
+		>> 在 Service 方法中完成初始化. 好处: Dao 方法可以被重用. 
+	> 使 Session 打开的时间变长一点, 可以使用 OpenSessionInViewFilter, 好处: 一劳永逸. 缺点: 略微的影响性能. 
+
+2). loginName 在修状态下的 Ajax 校验:
+①. 修改 loginName 后, 再修改回来, 则本来的 loginName 应该是可用的!
+②. 解决: 使用隐藏域, 把 old loginName 给存储起来. 
+
+③. 更进一步的: 若已经提交表单, 且提交表单时的 loginName 是经过修改后的, 因为其他验证再回显表单时, 则 oldLoginName 是修改之后的
+值. 此时不能再作为 loginName 判定的标准. 
+④. 解决: 
+<input type="hidden" name="oldLoginName" 
+		id="oldLoginName" value="${param.oldLoginName == null ? requestScope.loginName : param.oldLoginName }"/>
+
+3). 正常完成修改, 需要使用 params, preparable, params 拦截器栈. 
+
+4). 关于 "Duplicate entry '108-2' for key 1 " 异常:
+①. WHY ? 流程: 先提交表单; 执行 prepareSave 方法, 从数据表中获取对应的记录(此时 roles 集合中有 Role 对象); 
+params 拦截器为 roles 集合再赋值, 此时导致 roles 中会有多个 Role 对象, 他们可能已有 Role 的 id 是重复的; 
+进行保存时, 会向 employee-role 中加入新的记录, 而这会导致主键约束异常. 
+②. HOW ? 重写 Role 的 equals 和 hashCode, 使 roles 中不再可能有重复的元素
+
+5). 部门修改没有成功! 因为在获取 Employee 时没有初始化 Department 对象, 导致其只是一个代理对象, 不能为代理对象的属性赋值! 
+其 departmentId 为 null. 把 deparment 进行提前的初始化.
+
+6). 角色只能加, 不能减. 在获取 Employee 对象之后把 roles 置空. 
+
+public void prepareSave(){
+	if(id == null){
+		model = new Employee();
+	}else{
+		model = employeeService.get(id);
+		model.getRoles().clear();
+	}
+}
+
+********   具体操作       *************
+17.1 在 com.atguigu.ems.daos.EmployeeDao中有 get(Integer id)方法，不能仅用该方法，我们先暂时凑合用着
+
+    public Employee get(Integer id){
+		return (Employee) getSession().get(Employee.class, id);
+	}
+	
+17.2  com.atguigu.ems.services.EmployeeService 中添加如下方法：
+
+    @Transactional(readOnly=true)
+	public Employee get(Integer id){
+		return employeeDao.get(id);
+	}
+	
+17.3  com.atguigu.ems.actions.EmployeeAction 中已经有如下方法：
+      
+    public String input(){
+		request.put("roles", roleService.getAll());
+		request.put("departments", departmentService.getAll());
+		return "emp-input";
+	}
+	
+	我们再添加如下方法：
+	
+	public void prepareInput(){
+		if(id !=null ){
+			model = employeeService.get(id);
+		}
+	}
+
+17.4 重启服务器，然后在浏览器中输入： http://localhost:8080/EM03/emp-list
+              点击,预览一下点击修改时候的页面。
+
+             角色分配一栏，和创建人一栏会有异常！！！
+
+17.5 com.atguigu.ems.test.ApplicationContextTest中添加如下测试方法：
+
+    @Test
+	public void testGet(){
+		Employee employee = employeeService.get(2);
+		System.out.println(employee.getLoginName());//AABBCC
+		System.out.println("\n\n");
+		//因为oa_employee表中有一个 Department_ID外键，输出3
+		System.out.println(employee.getDepartment().getDepartmentId());
+		//下面一行会报异常：org.hibernate.LazyInitializationException: could not initialize proxy - no Session
+		//System.out.println(employee.getDepartment().getDepartmentName());
+		System.out.println(employee.getEditor().getEmployeeId());//3
+		//下一行抱异常org.hibernate.LazyInitializationException: failed to lazily initialize a collection of role: com.atguigu.ems.entities.Employee.roles, could not initialize proxy - no Session
+		//System.out.println(employee.getRoles().size());
+	}
+
+备注：
+②. 可以正常回显: department. 因为在 Employee 所对应的数据表中有 department 的 id. 所以获取的 Employee 的 department
+有 id 属性. 但无法获取 department 的其他属性.
+③. "创建人" 需要额外的编辑一下:
+<s:if test="employeeId == null">
+${employee.loginName }
+<input type="hidden" value="${sessionScope.employee.employeeId }" 
+	name="editor.employeeId"/>
+</s:if>
+<s:else>
+${employee.editor.loginName }
+<input type="hidden" value="${editor.employeeId }" 
+	name="editor.employeeId"/>
+</s:else>
+此时 editor 不能被正常显示. 因为获取了除了 id 的其他属性.
+
+17.6 解决: 需要在 Service 方法结束前初始化关联的对象 OR 使 Session 的打开时间变得长一点. 
+	> Service 方法结束前初始化所有的属性: 较为麻烦. [建议] 
+		>> Dao 中直接进行左外连接查询. 好处: 简单, 但 Dao 的方法不能被重用. 
+		调用 Hibernate.initialize 方法可以初始化代理对象.
+		
+		>> 在 Service 方法中完成初始化. 好处: Dao 方法可以被重用. 
+	> 使 Session 打开的时间变长一点, 可以使用 OpenSessionInViewFilter, 好处: 一劳永逸. 缺点: 略微的影响性能.
+	
+	这里我们用第一种方法。把 com.atguigu.ems.services.EmployeeService
+	@Transactional(readOnly=true)
+	public Employee get(Integer id){
+		return employeeDao.get(id);
+	}
+	
+	修改为：
+	
+	@Transactional(readOnly=true)
+	public Employee get(Integer id){
+		Employee employee = employeeDao.get(id);
+		Hibernate.initialize(employee.getEditor());
+		Hibernate.initialize(employee.getRoles());
+		return employee;
+	}
+	
+17.7 我们预览一下http://localhost:8080/EM03/emp-list页面，然后点击修改，17.5的异常已经消失，修改页面可以正常回显！！
+
+17.8 loginName 在修状态下的 Ajax 校验:
+①. 修改 loginName 后, 再修改回来, 则本来的 loginName 应该是可用的!
+②. 解决: 使用隐藏域, 把 old loginName 给存储起来. 
+
+③. 更进一步的: 若已经提交表单, 且提交表单时的 loginName 是经过修改后的, 因为其他验证再回显表单时, 则 oldLoginName 是修改之后的
+值. 此时不能再作为 loginName 判定的标准. 
+④. 解决: 
+<input type="hidden" name="oldLoginName" 
+		id="oldLoginName" value="${param.oldLoginName == null ? 
+		requestScope.loginName : param.oldLoginName }"/>
+具体步骤：****************************************************************
+1)在input.jsp中的<body>的<form>中添加如下代码：
+  		<s:if test="employeeId != null">
+		<input type="hidden" name="oldLoginName" 
+			id="oldLoginName" value="${param.oldLoginName == null ? requestScope.loginName : param.oldLoginName }"/>
+		<input type="hidden" name="id" value="${employeeId }"/>	
+		</s:if>
+2)在 input.jsp的 $("#loginName").change(function(){})中添加如下代码：
+		var oldLoginName = $("#oldLoginName").val();
+		if(val == oldLoginName){
+			return;
+		}
+
+17.9 正常完成修改, 需要使用 params, preparable, params 拦截器栈. 
+     
+              目标：我本身是三个蓝的，我想改成两个黄的，一个蓝的。
+             错误办法：  我new了一个对象，是三个白的，从页面上传过来的是两个黄的，我又两个属性被赋值了，另一个是为空
+            因此最后成了亮黄一白，没有成为亮黄一蓝。
+           正确办法：我从数据库中取出 三个蓝色的，然后页面传过来两个黄的，从数据库来的三个有一个没改，从页面来的两个
+           黄的加没改的那个传递给目标方法，执行update操作后，就得到了 两黄一蓝！！！
+           
+17.9.1  com.atguigu.ems.actions.EmployeeAction中把
+    
+    public void prepareSave(){
+		model = new Employee();
+	}
+	
+	
+	备注：假如我直接用上面的代码，当我修改一位employee性别进行修改后，直接提交，导致没有修改，
+	而是在数据库新增了一个修改了性别，别的属性与被修改对象一致的employee
+	修改为：
+	public void prepareSave(){
+		if(id == null){
+			model = new Employee();
+		}else{
+			model = employeeService.get(id);
+		}
+	}
+
+
+	
+17.9.2  关于 "Duplicate entry '108-2' for key 1 " 异常:
+①. WHY ? 流程: 先提交表单; 执行 prepareSave 方法, 从数据表中获取对应的记录(此时 roles 集合中有 Role 对象); 
+params 拦截器为 roles 集合再赋值, 此时导致 roles 中会有多个 Role 对象, 他们可能已有 Role 的 id 是重复的; 
+进行保存时, 会向 employee-role 中加入新的记录, 而这会导致主键约束异常. 
+②. HOW ? 重写 Role 的 equals 和 hashCode, 使 roles 中不再可能有重复的元素	
+
+com.atguigu.ems.entities.Role中添加如下方法，
+可以用ctrl + shif+ s 然后选择 Generate Hashcode and equals。。。进行创建！！
+    @Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((roleId == null) ? 0 : roleId.hashCode());
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		Role other = (Role) obj;
+		if (roleId == null) {
+			if (other.roleId != null)
+				return false;
+		} else if (!roleId.equals(other.roleId))
+			return false;
+		return true;
+	}
+	
+17.10 对某够employee的部门进行修改，但重新进入页面时候发现，部门修改没有成功! 因为在获取 Employee 时没有初始化 Department 对象, 导致其只是一个代理对象, 不能为代理对象的属性赋值! 
+其 departmentId 为 null. 把 deparment 进行提前的初始化.
+        需要在 com.atguigu.ems.services.EmployeeService中添加一条语句：
+       即：    Hibernate.initialize(employee.getDepartment());
+   public Employee get(Integer id){
+		Employee employee = employeeDao.get(id);
+		Hibernate.initialize(employee.getEditor());
+		Hibernate.initialize(employee.getRoles());
+		Hibernate.initialize(employee.getDepartment());
+		return employee;
+	}
+	
+17.11  角色只能加, 不能减，减后提交，再次进入修改页面发现没有角色没有减少. 
+       需要在获取 Employee 对象之后把 roles 置空. 
+在 com.atguigu.ems.actions.EmployeeAction的  prepareSave()方法中
+加一条语句如下： model.getRoles().clear();
+
+public void prepareSave(){
+	if(id == null){
+		model = new Employee();
+	}else{
+		model = employeeService.get(id);
+		model.getRoles().clear();
+	}
+}

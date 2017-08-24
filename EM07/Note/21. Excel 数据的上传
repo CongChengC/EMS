@@ -1,0 +1,569 @@
+21. Excel 数据的上传:
+1). 步骤:
+①. 显示 Excel 文件上传的页面
+②. 下载 上传文件的 模板
+③. 进行 Excel 数据的上传
+
+2). Excel 数据的上传
+①. Struts2 如何完成文件的上传呢 ? 使用 FileUploadInterceptor. 具体参看 FileUploadInterceptor 的 JavaDoc
+②. Action 方法的具体步骤:
+	> 得到上传的 File 对象
+	> 调用 Service 方法完成 Excel 文件的解析, 校验, 以及数据的上传.
+	> 若上传时出错, 则把错误放到 Action 中, 再转到 upload.jsp 页面, 进行错误的显示
+	> 若没有错误, 则提示上传成功. 
+
+3). 注意:
+①. 如何编写 Service 方法:
+	> 方法签名: public List<String[]> upload(File file)
+	> 具体步骤:
+		> 解析 File 为一个 Workbook 对象: 参照 POI 的文档
+		> 得到 name 为 employees 的 Sheet 对象
+		> 遍历 Sheet 中的每一行(从第二行, 因为第一行是 titles), 得到 Row
+		> 解析 Row 对象为一个 Employee 对象
+			> 得到 Row 的每一列(从第二列开始, 因为第一列是序号)
+			> 对每一列进行校验
+			> 若校验都通过, 则封装 Employee 对象返回。 
+		> 批量 save	
+		
+*****************具体操作***************************************************
+1) 显示 Excel 文件上传的页面
+         新建 /EM05/WebContent/WEB-INF/pages/emps/upload.jsp页面，并在页面中
+         导入：<%@ include file="/commons/common.jsp" %>，点击一下，看是否能点入判断是否写正确
+         
+         在<head>里面导入 css 连接：
+   <link rel="stylesheet"  type="text/css" href="${ctp}/css/content.css">
+   <link rel="stylesheet" type="text/css" href="${ctp}/css/list.css">
+   
+         在<body>中加入：
+   
+   	<br><br>
+	<center>
+		<br><br>
+		<a href="emp-downloadUploadExcelTemplate">下载模板</a><br><br>
+		
+		<font color="red">
+			<!-- 显示上传时的错误消息: 例如部门是否存在. 输入的性别是否合法 -->
+			<s:actionerror escape="false"/>
+			<s:fielderror fieldName="file"></s:fielderror>
+		</font>
+		<br><br>
+		
+		<form action="emp-upload" enctype="multipart/form-data" method="post">
+			<input type="file" name="file" />
+			<input type="submit" value="上传"/>
+		</form>
+		
+	</center>
+         
+2)  你怎么来到这个 upload.jsp页面呢？？？
+            在/EM05/conf/struts.xml中：
+    	
+        <!-- 直接导航到 /WEB-INF/pages/emps/upload.jsp页面 -->
+		<action name="emp_upload">
+		      <result>/WEB-INF/pages/emps/upload.jsp</result>
+		</action>  
+	
+备注：没写class，则class 是 actionSupport；  没写方法，则是execute；  没写 name 则是  success 
+
+  重启服务器，然后浏览器中输入：http://localhost:8080/EM05/emp_upload，就可以到达上传页面！！！！ 
+  
+3)下载 上传文件的 模板
+3.1 把模板Excel文件放在  /EM05/WebContent/files/employees.xls 路径下
+
+3.2 因为要点击upload.jsp 中这个链接：
+<a href="emp-downloadUploadExcelTemplate">下载模板</a><br><br>
+
+我们在 com.atguigu.ems.actions.EmployeeAction中建立如下下载方法：
+		
+public String downloadUploadExcelTemplate() throws IOException{
+	inputStream = ServletActionContext.getServletContext().getResourceAsStream("/files/employees.xls"); 
+	contentType = "application/vnd.ms-excel";
+	contentLength = inputStream.available();
+	fileName = "employees.xls";
+	return "download-success";
+}
+
+3.3 struts.xml中配置文件已经存在，我们重启服务器，
+在浏览器中输入：http://localhost:8080/EM05/emp_upload
+点击下载模板，就可以把模板下载到自己目标路径。
+
+4) Excel 数据的上传
+①. Struts2 如何完成文件的上传呢 ? 使用 FileUploadInterceptor. 具体参看 FileUploadInterceptor 的 JavaDoc
+②. Action 方法的具体步骤:
+	> 得到上传的 File 对象
+	> 调用 Service 方法完成 Excel 文件的解析, 校验, 以及数据的上传.
+	> 若上传时出错, 则把错误放到 Action 中, 再转到 upload.jsp 页面, 进行错误的显示
+	> 若没有错误, 则提示上传成功.
+
+4.1 ctrl+shift+T，搜索 FileUploadInterceptor,关联源码包，然后选中FileUploadInterceptor，并打开Javadoc：
+            可以看到   [File Name] : File - the actual File  
+            以及 public UploadAction extends ActionSupport {}等等
+            
+    我们仿照例子：在 com.atguigu.ems.actions.EmployeeAction中加入如下代码：
+    
+        private File file;
+		
+		public void setFile(File file) {
+			this.file = file;
+		}
+		
+		public String upload(){
+			//返回的结果类似于如下: [{"2","4"},{"5","3"}]
+			List<String[]> positions = employeeService.upload(file);
+			//所有有错误. 
+			if(positions != null && positions.size() > 0){
+				for(String [] args: positions){
+					String error = getText("errors.emp.upload", args);
+					addActionError(error);
+				}
+			}else{
+				addActionError(getText("message.emp.upload"));
+			}
+			return "upload-input";
+		}
+            
+4.2 在  com.atguigu.ems.services.EmployeeService中加入如下代码：
+
+    //现在这个只是用来测试打通流程用的
+    public List<String[]> upload(File file) {
+		return Arrays.asList(new String[]{"2","3"},new String[]{"4","6"});
+	}
+
+
+4.3 在 /EM05/conf/i18n.properties中加入如下代码：
+
+errors.emp.upload=\u7b2c{0}\u884c\u7b2c{1}\u5217\u51fa\u9519<br>
+message.emp.upload=\u4e0a\u4f20\u6570\u636e\u6210\u529f!
+
+４.４　/EM05/conf/struts.xml中　加入下行代码
+
+     <result name="upload-input">/WEB-INF/pages/emps/upload.jsp</result>
+　　　
+　　　　到　<action name="emp-*"
+			class="employeeAction"
+			method="{1}">
+			
+		</action>　　　之中！！！
+		
+４.５　清理服务器，然后重启服务器，启动工程，在浏览器中输入　http://localhost:8080/EM05/emp-upload
+　　　　随便点一个文件进行上传，可以看到：
+　　　　　
+　　　　　　　　               第2行第3列出错
+　　　　　　　　               第4行第6列出错
+　　　**********　说明流程已经打通！！！！*******
+
+4.6 下一步关键参考　org.apache.struts2.interceptor.FileUploadInterceptor
+的javadoc可以看到：
+
+Interceptor parameters: 
+
+maximumSize (optional) - the maximum size (in bytes) that the interceptor will allow a file 
+reference to be set on the action. Note, this is not related to the various properties found
+ in struts.properties. Default to approximately 2MB. 
+
+allowedTypes (optional) - a comma separated list of content types (ie: text/html) that the 
+interceptor will allow a file reference to be set on the action. If none is specified allow 
+all types to be uploaded. 
+
+allowedExtensions (optional) - a comma separated list of file extensions (ie: .html) that 
+the interceptor will allow a file reference to be set on the action. If none is specified 
+allow all extensions to be uploaded. 
+
+４.７　我们删掉　struts.xml　中<action name="emp-*"　class="employeeAction"　method="{1}"></action>中的
+　　　　　　　　　<result name="upload-input">/WEB-INF/pages/emps/upload.jsp</result>
+
+　　　　在　struts.xml中新建一个：
+　　　　	
+　　　　　<action name="emp-upload"
+			class="employeeAction"
+			method="upload">
+			<!-- 设置仅针对于当前 Action 的拦截器参数 -->
+			<interceptor-ref name="emsStack">
+				<param name="fileUpload.allowedExtensions">xls</param>
+			</interceptor-ref>
+			
+			<result name="input">/WEB-INF/pages/emps/upload.jsp</result>	
+		</action>
+	备注：在struts-default.xml中有拦截器，我们用它点参数
+	<interceptor name="fileUpload" class="org.apache.struts2.interceptor.FileUploadInterceptor"/>	
+	注意此时需要把　com.atguigu.ems.actions.EmployeeAction.upload()中的返回值修改为：return "input";
+	
+４.８　参考　org.apache.struts2.interceptor.FileUploadInterceptor
+的javadoc：
+struts.messages.error.file.extension.not.allowed - occurs when the uploaded file does not match the expected file extensions specified
+
+我们在　/EM05/conf/i18n.properties中加入如下代码：
+struts.messages.error.file.extension.not.allowed=\u4E0A\u4F20\u7684\u6587\u4EF6\u6269\u5C55\u540D\u4E0D\u5408\u6CD5\uFF01
+
+
+４.９　我们在　上传页面中选择一个　pdf 文件进行上传，页面能正确的显示出提示信息：　上传的文件扩展名不合法！
+
+４.１０ 上传数据的校验：下一步关键是进行对file 的解析。
+修改  com.atguigu.ems.services.EmployeeService 中的 
+    //现在这个只是用来测试打通流程用的
+    public List<String[]> upload(File file) {
+		return Arrays.asList(new String[]{"2","3"},new String[]{"4","6"});
+	}
+
+修改框架如下：
+    
+    public List<String[]> upload(File file) {
+		List<String[]> positions = new ArrayList<>();
+		// 1. 把 File 对象解析为一个 Workbook 对象
+		
+		// 2. 得到 name="employees" 的 Sheet 对象
+		
+		// 3. 把内容解析为一个 Employee 的 List.
+		
+		// 4. 完成批量的上传
+		
+		return positions;
+	}
+	
+点开：OpenSource2/poi-src-3.5-FINAL-20090928/poi-3.5-FINAL/docs/spreadsheet/quick-guide.html
+    ——————》Reading and writing------看到Reading and Rewriting Workbooks：
+    InputStream inp = new FileInputStream("workbook.xls");
+    //InputStream inp = new FileInputStream("workbook.xlsx");
+
+    Workbook wb = WorkbookFactory.create(inp);
+    Sheet sheet = wb.getSheetAt(0);
+
+这可以给我们参考完成 1 和 2 ，于是得到：
+
+	public List<String[]> upload(File file) throws InvalidFormatException, IOException {
+		List<String[]> positions = new ArrayList<>();
+		// 1. 把 File 对象解析为一个 Workbook 对象
+		 InputStream inp = new FileInputStream(file);
+		 Workbook wb = WorkbookFactory.create(inp);
+		 
+		// 2. 得到 name="employees" 的 Sheet 对象
+		Sheet sheet = wb.getSheet("employees");
+		// 3. 把内容解析为一个 Employee 的 List.
+		
+		// 4. 完成批量的上传
+		
+		return positions;
+	}
+	
+4.11 继续完成com.atguigu.ems.services.EmployeeService的upload方法 3,4 步骤后得到：
+              注意，一定要记得加  @Transactional，否则出现异常：No Session found for current thread
+    
+     @Transactional
+     public List<String[]> upload(File file) throws InvalidFormatException, IOException {
+		List<String[]> positions = new ArrayList<>();
+		// 1. 把 File 对象解析为一个 Workbook 对象
+		 InputStream inp = new FileInputStream(file);
+		 Workbook wb = WorkbookFactory.create(inp);
+		 
+		// 2. 得到 name="employees" 的 Sheet 对象
+		 Sheet sheet = wb.getSheet("employees");
+		// 3. 把内容解析为一个 Employee 的 List.
+		List<Employee> emps = parseSheetToEmployees(sheet, positions);
+
+		if (positions.size() > 0) {
+			return positions;
+		}
+		
+		System.out.println(emps.size());
+		// 4. 完成批量的上传
+		employeeDao.batchSave(emps);
+		
+		return positions;
+	}
+	
+4.12 EmployeeService中添加 parseSheetToEmployees方法
+
+	private List<Employee> parseSheetToEmployees(Sheet sheet,
+			List<String[]> positions) {
+		List<Employee> emps = new ArrayList<>();
+		    // 1. 得到每一行
+		for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+			// 2. 把每一行都解析为一个 Employee 对象
+			Row row = sheet.getRow(i);
+
+			// 3. 若解析的过程没有错误, 则把该 Employee 放入到 Employee 的集合中.
+			Employee employee = parseRowToEmployee(row, i + 1, positions);
+			if (employee != null) {
+				emps.add(employee);
+			}
+		}
+
+		// 4. 返回 Employee 的集合
+		return emps;
+	}
+	
+4.13 补充 4.12 的 parseRowToEmployee方法：
+
+private Employee parseRowToEmployee(Row row, int rowNum, List<String[]> positions) {
+		// 1. 得到具体每一列的值
+		// 序号 登录名 姓名 性别 登录许可 部门 E-mail 角色
+		Cell cell = row.getCell(1);
+		Object cellVal = getCellValue(cell);
+		boolean flag = validateLoginName(cellVal, rowNum, positions);
+		String loginName = null;
+		if(flag){
+			loginName = (String) cellVal;
+		}
+		
+		cell = row.getCell(2);
+		cellVal = getCellValue(cell);
+		flag = validateEmployeeName(cellVal, rowNum, positions) && flag;
+		String employeeName = null;
+		if(flag){
+			employeeName = (String) cellVal;
+		}
+		
+		// 2. 对每一列的值进行解析, 校验该列的值
+		//性别:
+		cell = row.getCell(3);
+		cellVal = getCellValue(cell);
+		String gender = validateGender(cellVal, rowNum, positions);
+		flag = (gender != null) && flag;
+		
+		
+		//登陆许可: 填入的值可能是字符串, 也可能是数值. 若是数值, 则时间返回的是 1.0. 所以需要对用户
+		//输入的 1.0, 0.0 进行兼容。 
+		cell = row.getCell(4);
+		cellVal = getCellValue(cell);
+		Integer enabled = validateEnable(cellVal, rowNum, positions);
+		flag = (enabled != null) && flag;
+		
+		//部门: 必须是已经存在的某一个部门的名字
+		cell = row.getCell(5);
+		cellVal = getCellValue(cell);
+		Department department = validateDepartment(cellVal, rowNum, positions);
+		flag = (department != null) && flag;
+		
+		//Email: 必须是一个合法的 Email 地址
+		cell = row.getCell(6);
+		cellVal = getCellValue(cell);
+		String email = validateEmail(cellVal, rowNum, positions);
+		flag = (email != null) && flag;
+		
+		//角色: 必须是已经存在的 Role 的 roleName 的列表(用逗号分隔, 若有一个不对, 都不行)
+		cell = row.getCell(7);
+		cellVal = getCellValue(cell);
+		Set<Role> roles = validateRoles(cellVal, rowNum, positions);
+		flag = (roles != null) && flag;
+
+		// 3. 若所有的验证都可以通过, 则组装 Employee 对象返回
+		if(flag){
+			//创建 Employee 对象, 并返回
+			Employee employee = new Employee(loginName, employeeName, roles, enabled, department, gender, email);
+			return employee;
+		}
+		
+		return null;
+}
+
+4.14 补充 4.13 中的  getCellValue方法：
+  
+  private Object getCellValue(Cell cell) {
+		switch (cell.getCellType()) {
+		case Cell.CELL_TYPE_STRING:
+			return cell.getRichStringCellValue().getString();
+		case Cell.CELL_TYPE_NUMERIC:
+			if (DateUtil.isCellDateFormatted(cell)) {
+				return cell.getDateCellValue();
+			} else {
+				return cell.getNumericCellValue();
+			}
+		case Cell.CELL_TYPE_BOOLEAN:
+			return cell.getBooleanCellValue();
+		case Cell.CELL_TYPE_FORMULA:
+			return cell.getCellFormula();
+		default:
+			return null;
+		}
+	}
+	
+	
+4.15校验方法：  补充 4.13 中的哪些 validateXxxx 校验方法：
+      
+      private Set<Role> validateRoles(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof String){
+			String roleNames = (String) cellVal;
+			String [] names = roleNames.split(",");
+			
+			List<String> nameList = Arrays.asList(names);
+			List<Role> roles = roleDao.getByIn("roleName", nameList);
+			
+			if(roles.size() == names.length){
+				return new HashSet<>(roles);
+			}
+		}
+		
+		positions.add(new String[]{rowNum + "", "8"});
+		return null;
+	}
+
+	private String validateEmail(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof String){
+			String email = (String) cellVal;
+			Pattern pattern = Pattern.compile("^([a-z0-9_\\.-]+)@([\\da-z\\.-]+)\\.([a-z\\.]{2,6})$");
+			Matcher matcher = pattern.matcher(email);
+			if(matcher.matches()){
+				return email;
+			}
+		}
+		
+		positions.add(new String[]{rowNum + "", "7"});
+		return null;
+	}
+
+	private Department validateDepartment(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof String){
+			String deptName = (String) cellVal;
+			Department department = departmentDao.getBy("departmentName", deptName);
+			if(department != null){
+				return department;
+			}
+		}
+		
+		positions.add(new String[]{rowNum + "", "6"});
+		return null;
+	}
+
+	private Integer validateEnable(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof Double){
+			double d = (double) cellVal;
+			int i = (int) d;
+			if(i == 1 || i == 0){
+				return i;
+			}
+		}
+		if(cellVal instanceof String){
+			String s = (String) cellVal;
+			if("1".equals(s) || "0".equals(s)){
+				return Integer.parseInt(s);
+			}
+		}
+		
+		positions.add(new String[]{rowNum + "", "5"});
+		return null;
+	}
+
+	private String validateGender(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof Double){
+			double d = (double) cellVal;
+			int i = (int) d;
+			if(i == 1 || i == 0){
+				return i + "";
+			}
+		}
+		if(cellVal instanceof String){
+			String s = (String) cellVal;
+			if("1".equals(s) || "0".equals(s)){
+				return s;
+			}
+		}
+		
+		positions.add(new String[]{rowNum + "", "4"});
+		return null;
+	}
+
+	private boolean validateEmployeeName(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		if(cellVal instanceof String){
+			return true;
+		}
+		
+		positions.add(new String[]{rowNum + "", "3"});
+		return false;
+	}
+
+	//校验 loginName
+	private boolean validateLoginName(Object cellVal, int rowNum,
+			List<String[]> positions) {
+		boolean flag = true;
+		if(cellVal == null || !(cellVal instanceof String)){
+			flag = false;
+		}else{
+			String loginName = (String) cellVal;
+			if(loginName.length() < 6){
+				flag = false;
+			}else{
+				Pattern p = Pattern.compile("^[a-zA-Z]\\w+\\w$");
+				Matcher m = p.matcher(loginName);
+				if(!m.matches()){
+					flag = false;
+				}
+			}
+		}
+		
+		if(!flag){
+			positions.add(new String[]{rowNum + "", "2"});
+		}
+		return flag;
+	}	
+	
+	
+	
+
+4.16 补充4.11 所需的方法batchSave，于是在 com.atguigu.ems.daos.EmployeeDao中添加：
+
+	public void batchSave(List<Employee> emps) {
+		for(int i = 0; i < emps.size(); i++){
+			getSession().save(emps.get(i));
+			
+			if((i + 1) % 50 == 0){
+				getSession().flush();
+				getSession().clear();
+			}
+		}
+	}
+
+4.17.1 com.atguigu.ems.services.EmployeeService 中添加：
+    
+       @Autowired
+	   private RoleDao roleDao;
+	
+4.17.2 因为4.15中validateRoles里面 调用如下:
+      List<Role> roles = roleDao.getByIn("roleName", nameList);
+	     在com.atguigu.ems.daos.RoleDao中添加如下方法：
+	
+	public List<Role> getByIn(String propertyName, List<? extends Object> propertyVals){
+		Criterion criterion = Restrictions.in(propertyName, propertyVals);
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		return criteria.list();
+	}
+	
+4.17.3 	因为4.15中 validateDepartment方法进行了如下调用：
+   
+    Department department = departmentDao.getBy("departmentName", deptName);
+    
+          我们在com.atguigu.ems.daos.DepartmentDao中添加如下方法：
+    
+   	public Department getBy(String propertyName, Object propertyVal){
+		//1. 构造基于 QBC 的查询条件
+		Criterion criterion = Restrictions.eq(propertyName, propertyVal);
+		//2. 添加查询条件
+		Criteria criteria = getCriteria();
+		criteria.add(criterion);
+		
+		//3. 执行查询, 返回结果
+		return (Department) criteria.uniqueResult();
+	}
+
+
+4.18 测试
+              可以先把  com.atguigu.ems.services.EmployeeService.parseRowToEmployee(Row, int, List<String[]>) 中如下代码
+               先注释掉，然后在模板中添加信息，在 http://localhost:8080/EM05/emp-upload页面进行测试。
+              可以把验证条件一个一个先注释掉，慢慢加验证条件，再进行测试！！！
+     我们的验证程序中，性别与登录许可 是用的 文本或数字的 1 或 0表示；部门必须是数据库表中有的一个部门，角色是数据库表中几个角色，这几个角色
+     是用英文逗号分隔才能正确上传。
+       
+        if(flag){
+			//创建 Employee 对象, 并返回
+			Employee employee = new Employee(loginName, employeeName, roles, enabled, department, gender, email);
+			return employee;
+		}
+		
+4.19 清理服务器，重启服务器，然后 http://localhost:8080/EM05/emp-upload页面中上传Excel表格。显示上传成功后，
+再检查数据库看是否真的上传成功！！！	
